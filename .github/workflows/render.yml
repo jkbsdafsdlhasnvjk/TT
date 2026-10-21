@@ -23,7 +23,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: kinogryz-alignment-debug-v4
+          name: kinogryz-alignment-debug-v5
           path: |
             goose_word_times.json
             captions.ass
@@ -33,6 +33,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: kinogryz-goose-no-flicker-v4
+          name: kinogryz-goose-no-flicker-v5
           path: "КиноГрызь_Гусь_версия_GitHub.mp4"
           retention-days: 7
