@@ -1,14 +1,12 @@
-
 name: Kinogryz Render
-
 on:
   workflow_dispatch:
-
 jobs:
   render:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check FFmpeg
+      - name: Setup FFmpeg
         run: bash scripts/check_ffmpeg.sh
-  
+      - name: Run smoke test
+        run: bash scripts/render_smoke.sh
