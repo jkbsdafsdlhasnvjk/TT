@@ -1,4 +1,4 @@
-name: Kinogryz source check
+name: Kinogryz source check v2
 on:
   push:
     paths: [".github/workflows/render.yml"]
