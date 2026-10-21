@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-import re
+"""Stable phrase captions: one libass event per sentence and timed per-word color."""
+import ast
 import json
 from pathlib import Path
-# Timings relative to clip_3 excerpt, obtained from existing transcription.
+
 lines=[
 (0,.78,"Доброе утро, шеф."),(1.359,2.199,"Чем сегодня займемся?"),
 (2.719,3.939,"Иди разгружай продукты."),(4.459,5.899,"Шеф, но я же не грузчик, я повар."),
@@ -20,12 +21,10 @@ lines=[
 (53.419,53.56,"Ха!"),(53.96,54.66,"Убей гуся."),
 (54.94,55.72,"Легко сказать."),(55.979,58.84,"Я в жизни никого не убивал, а этот еще на моего дядю похож."),
 ]
-def stamp(t):
-    cs=int(round(t*100)); h,r=divmod(cs,360000);m,r=divmod(r,6000);s,c=divmod(r,100)
-    return f"{h}:{m:02}:{s:02}.{c:02}"
-def esc(x):
-    return x.replace("{","").replace("}","").replace("\\","")
-head="""[Script Info]
+word_times = json.loads(Path('goose_word_times.json').read_text(encoding='utf-8'))
+assert len(lines) == len(word_times), 'Caption/transcription count mismatch'
+
+HEADER = '''[Script Info]
 ScriptType: v4.00+
 PlayResX: 1080
 PlayResY: 1920
@@ -36,37 +35,54 @@ Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,
 Style: Word,DejaVu Sans,53,&H00FFFFFF,&H0000FFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,4,1,8,50,50,0,1
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-"""
-items=[]
-word_times=json.loads(Path('goose_word_times.json').read_text(encoding='utf-8'))
-assert len(word_times)==len(lines), 'Word timing line count mismatch'
-for line_i,(start,end,sentence) in enumerate(lines):
-    words=sentence.split()
-    n=len(words)
-    if not n:continue
-    assert len(word_times[line_i]) == n, f'Word mismatch on line {line_i}'
-    for j in range(n):
-        a,b=word_times[line_i][j]
-        # Align text in two lines top-to-bottom; never use independent overlapping captions.
-        raw=[esc(w) for w in words]
-        width=sum(len(x)+1 for x in raw)
-        if width>34 and len(raw)>3:
-            half=width/2;acc=0;split=1
-            for k,w in enumerate(raw[:-1]):
-                acc+=len(w)+1
-                if acc>=half:
-                    split=k+1;break
-        else:split=None
-        styled=[(r"{\1c&H00D7FF&}"+w+r"{\1c&HFFFFFF&}") if k==j else w for k,w in enumerate(raw)]
-        msg=(" ".join(styled[:split])+r"\N"+" ".join(styled[split:])) if split else " ".join(styled)
-        # Centered above the lower control zone, with stable position and no micro-pause flicker.
-        items.append(f"Dialogue: 0,{stamp(a)},{stamp(b)},Word,,0,0,0,,{{\\an8\\pos(540,1390)}}{msg}")
-    # keep last word/phrase through short intra-scene silence (<0.35 sec)
-    nxt=next((k[0] for k in lines if k[0]>start),None)
-    if nxt is not None and nxt-end<.35 and nxt>end:
-        prior=items[-1]
-        a=prior.split(",")
-        a[2]=stamp(nxt)
-        items[-1]=",".join(a)
-Path("captions.ass").write_text(head+"\n".join(items)+"\n",encoding="utf-8")
-print("SUBTITLE_EVENTS",len(items))
+'''
+def stamp(t):
+    cs = int(round(max(0, t) * 100))
+    h, r = divmod(cs, 360000); m, r = divmod(r, 6000); s, c = divmod(r, 100)
+    return f'{h}:{m:02}:{s:02}.{c:02}'
+def esc(s):
+    return s.replace('\\','').replace('{','').replace('}','')
+def split_at(words):
+    width = sum(len(word) + 1 for word in words)
+    if width <= 34 or len(words) <= 3: return len(words)
+    half = width / 2; accum = 0
+    for i, word in enumerate(words[:-1]):
+        accum += len(word) + 1
+        if accum >= half: return i + 1
+    return len(words)
+
+CAPTION_PRE_ROLL = 0.16
+CAPTION_HOLD = 0.85
+HIGHLIGHT_LEAD = 0.08
+CLIP_DURATION = 60.48
+
+events = []
+for i, (_, _, sentence) in enumerate(lines):
+    words = [esc(w) for w in sentence.split()]
+    timings = word_times[i]
+    assert len(words) == len(timings), f'Word count mismatch on line {i}'
+    for j, (begin,end) in enumerate(timings):
+        assert 0 <= begin < end <= CLIP_DURATION + 0.01, (i,j,begin,end)
+    first = timings[0][0]; last = timings[-1][1]
+    start = max(0.0, first-CAPTION_PRE_ROLL)
+    end = min(CLIP_DURATION, last+CAPTION_HOLD)
+    if i+1 < len(lines):
+        end = min(end, max(last, word_times[i+1][0][0]-CAPTION_PRE_ROLL))
+    end = max(end, last, start+0.04)
+    cut = split_at(words)
+    styled = []
+    for j,token in enumerate(words):
+        begin,finish = timings[j]
+        begin = max(start,begin-HIGHLIGHT_LEAD)
+        finish = min(end,max(begin+0.05,finish-HIGHLIGHT_LEAD))
+        b = int(round(1000*(begin-start))); e=int(round(1000*(finish-start)))
+        if b <= 0:
+            tag = '{\\1c&H00D7FF&' + f'\\t({e},{e+1},\\1c&HFFFFFF&)' + '}'
+        else:
+            tag = '{\\1c&HFFFFFF&' + f'\\t({b},{b+1},\\1c&H00D7FF&)' + f'\\t({e},{e+1},\\1c&HFFFFFF&)' + '}'
+        styled.append(tag+token)
+    txt = ' '.join(styled[:cut])
+    if cut < len(words): txt += r'\N'+' '.join(styled[cut:])
+    events.append(f'Dialogue: 0,{stamp(start)},{stamp(end)},Word,,0,0,0,,{{\\an8\\pos(540,1390)}}{txt}')
+Path('captions.ass').write_text(HEADER+'\n'.join(events)+'\n',encoding='utf-8')
+print('STABLE_PHRASE_EVENTS',len(events), 'WORDS',sum(map(len,word_times)))
