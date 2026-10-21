@@ -101,4 +101,4 @@ for i in range(1,len(starts)):
     assert starts[i] >= word_times[i-1][-1][1] - 0.01
 assert len(events) == len(lines) == len(word_times)
 for i, e in enumerate(events):
-    assert e.count('\\\\t(') >= len(word_times[i]), (i,'missing highlight transforms')
+    assert e.count(chr(92)+'t(') >= len(word_times[i]), (i,'missing highlight transforms')
