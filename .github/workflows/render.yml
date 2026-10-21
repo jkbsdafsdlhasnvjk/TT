@@ -1,12 +1,26 @@
-name: Kinogryz Render
+name: Kinogryz source check
 on:
+  push:
+    paths: [".github/workflows/render.yml"]
   workflow_dispatch:
+permissions:
+  contents: read
 jobs:
-  render:
+  source:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - name: Setup FFmpeg
+      - name: Install FFmpeg
         run: bash scripts/check_ffmpeg.sh
-      - name: Run smoke test
-        run: bash scripts/render_smoke.sh
+      - name: Fetch full quality file from Google Drive
+        run: bash scripts/fetch_season.sh
+      - name: Save source diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-check
+          path: |
+            source-info.json
+            sample.jpg
+          if-no-files-found: ignore
