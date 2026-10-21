@@ -10,5 +10,5 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Check FFmpeg
-        run: ffmpeg -version
+        run: bash scripts/check_ffmpeg.sh
   
