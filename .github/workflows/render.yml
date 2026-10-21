@@ -1,4 +1,4 @@
-name: Kinogryz source check v2
+name: Kinogryz full-source render test
 on:
   push:
     paths: [".github/workflows/render.yml"]
@@ -6,21 +6,21 @@ on:
 permissions:
   contents: read
 jobs:
-  source:
+  render:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - name: Install FFmpeg
         run: bash scripts/check_ffmpeg.sh
-      - name: Fetch full quality file from Google Drive
+      - name: Download full season
         run: bash scripts/fetch_season.sh
-      - name: Save source diagnostics
-        if: always()
+      - name: Render goose scene with readable highlighted subtitles
+        run: bash scripts/render_goose.sh
+      - name: Save finished MP4
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: source-check
-          path: |
-            source-info.json
-            sample.jpg
-          if-no-files-found: ignore
+          name: kinogryz-goose-final-test
+          path: "*.mp4"
+          retention-days: 7
