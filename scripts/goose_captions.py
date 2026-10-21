@@ -51,11 +51,19 @@ def split_at(words):
         if accum >= half: return i + 1
     return len(words)
 
-CAPTION_PRE_ROLL = 0.16
-CAPTION_HOLD = 0.85
-HIGHLIGHT_LEAD = 0.08
+CAPTION_PRE_ROLL = 0.13
+CAPTION_HOLD = 0.70
+HIGHLIGHT_LEAD = 0.06
+MAX_HIGHLIGHT = 0.85
 CLIP_DURATION = 60.48
 
+# Calculate ALL caption starts before calculating ends. Adjacent phrases
+# never occupy the screen simultaneously, even with very short pauses.
+starts = []
+for i, words in enumerate(word_times):
+    first = words[0][0]
+    previous_word_end = word_times[i-1][-1][1] if i else 0.0
+    starts.append(max(0.0, first-CAPTION_PRE_ROLL, previous_word_end+0.02 if i else 0.0))
 events = []
 for i, (_, _, sentence) in enumerate(lines):
     words = [esc(w) for w in sentence.split()]
@@ -64,17 +72,17 @@ for i, (_, _, sentence) in enumerate(lines):
     for j, (begin,end) in enumerate(timings):
         assert 0 <= begin < end <= CLIP_DURATION + 0.01, (i,j,begin,end)
     first = timings[0][0]; last = timings[-1][1]
-    start = max(0.0, first-CAPTION_PRE_ROLL)
+    start = starts[i]
     end = min(CLIP_DURATION, last+CAPTION_HOLD)
     if i+1 < len(lines):
-        end = min(end, max(last, word_times[i+1][0][0]-CAPTION_PRE_ROLL))
-    end = max(end, last, start+0.04)
+        end = min(end, starts[i+1]-0.01)
+    assert end >= last-0.015 and end > start, (i,start,end,last)
     cut = split_at(words)
     styled = []
     for j,token in enumerate(words):
         begin,finish = timings[j]
         begin = max(start,begin-HIGHLIGHT_LEAD)
-        finish = min(end,max(begin+0.05,finish-HIGHLIGHT_LEAD))
+        finish = min(end, max(begin+0.05, min(finish-HIGHLIGHT_LEAD, begin+MAX_HIGHLIGHT)))
         b = int(round(1000*(begin-start))); e=int(round(1000*(finish-start)))
         if b <= 0:
             tag = '{\\1c&H00D7FF&' + f'\\t({e},{e+1},\\1c&HFFFFFF&)' + '}'
@@ -86,3 +94,11 @@ for i, (_, _, sentence) in enumerate(lines):
     events.append(f'Dialogue: 0,{stamp(start)},{stamp(end)},Word,,0,0,0,,{{\\an8\\pos(540,1390)}}{txt}')
 Path('captions.ass').write_text(HEADER+'\n'.join(events)+'\n',encoding='utf-8')
 print('STABLE_PHRASE_EVENTS',len(events), 'WORDS',sum(map(len,word_times)))
+
+# Validate the actual ASS file events, not only the word-alignment source.
+from math import isfinite
+for i in range(1,len(starts)):
+    assert starts[i] >= word_times[i-1][-1][1] - 0.01
+assert len(events) == len(lines) == len(word_times)
+for i, e in enumerate(events):
+    assert e.count('\\\\t(') >= len(word_times[i]), (i,'missing highlight transforms')
