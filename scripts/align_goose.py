@@ -9,7 +9,7 @@ source = ast.parse(Path("scripts/goose_captions.py").read_text(encoding="utf-8")
 lines = next(ast.literal_eval(node.value) for node in source.body
              if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "lines" for t in node.targets))
 audio = whisperx.load_audio("goose_audio.wav")
-segments = [{"start": max(0.0, a - 0.18), "end": min(len(audio)/16000, b + 0.18),
+segments = [{"start": max(0.0, a - 0.70), "end": min(len(audio)/16000, b + 0.55),
              "text": phrase} for a, b, phrase in lines]
 model, meta = whisperx.load_align_model(language_code="ru", device="cpu")
 result = whisperx.align(segments, model, meta, audio, "cpu")
@@ -32,3 +32,6 @@ if problems:
     raise RuntimeError("Alignment incomplete; not exporting approximate timings:\n" + "\n".join(problems))
 Path("goose_word_times.json").write_text(json.dumps(timings, ensure_ascii=False, indent=2), encoding="utf-8")
 print("ALIGNED_WORDS", sum(map(len, timings)))
+for i, ((a,b,txt), found) in enumerate(zip(lines,timings)):
+    first, last = found[0][0], found[-1][1]
+    print(f"PHRASE {i:02} old=[{a:.2f},{b:.2f}] aligned=[{first:.2f},{last:.2f}] {txt}")
