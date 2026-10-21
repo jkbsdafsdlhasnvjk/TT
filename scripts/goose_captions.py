@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import re
+import json
 from pathlib import Path
 # Timings relative to clip_3 excerpt, obtained from existing transcription.
 lines=[
@@ -37,13 +38,15 @@ Style: Word,DejaVu Sans,53,&H00FFFFFF,&H0000FFFF,&H00000000,&H64000000,-1,0,0,0,
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 items=[]
-for start,end,sentence in lines:
+word_times=json.loads(Path('goose_word_times.json').read_text(encoding='utf-8'))
+assert len(word_times)==len(lines), 'Word timing line count mismatch'
+for line_i,(start,end,sentence) in enumerate(lines):
     words=sentence.split()
     n=len(words)
     if not n:continue
+    assert len(word_times[line_i]) == n, f'Word mismatch on line {line_i}'
     for j in range(n):
-        a=start+(end-start)*j/n
-        b=end if j==n-1 else start+(end-start)*(j+1)/n
+        a,b=word_times[line_i][j]
         # Align text in two lines top-to-bottom; never use independent overlapping captions.
         raw=[esc(w) for w in words]
         width=sum(len(x)+1 for x in raw)
