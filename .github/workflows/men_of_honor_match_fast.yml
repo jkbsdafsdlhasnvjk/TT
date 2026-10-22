@@ -19,8 +19,15 @@ jobs:
           echo "$RUNNER_TEMP/ffbin" >> "$GITHUB_PATH"
       - name: Download smaller 360p source
         run: yt-dlp --fixup never --no-progress -f hls-757 --concurrent-fragments 8 --retries 7 --fragment-retries 7 "https://ok.ru/video/7191873522312" -o film_360.mp4
+      - name: Inspect and repair downloaded MPEG-TS container
+        run: |
+          file film_360.mp4
+          ffmpeg -hide_banner -i film_360.mp4 -t 2 -f null - || true
+          ffmpeg -y -hide_banner -i film_360.mp4 -c copy film_360_fixed.mkv
+          ls -lah film_360.mp4 film_360_fixed.mkv
+          ffmpeg -hide_banner -i film_360_fixed.mkv -t 2 -f null -
       - name: Match all 78 scene fingerprints
-        run: python scripts/men_of_honor_match16.py film_360.mp4
+        run: python scripts/men_of_honor_match16.py film_360_fixed.mkv
       - name: Save exact mapping
         if: always()
         uses: actions/upload-artifact@v4
