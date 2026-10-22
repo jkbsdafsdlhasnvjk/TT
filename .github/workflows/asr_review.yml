@@ -23,7 +23,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: goose-asr-words
+          name: goose-asr-words-v2
           path: |
             asr_raw_words.json
             goose_audio_alignment_review.json
@@ -34,9 +34,9 @@ jobs:
         if: always()
         run: bash scripts/render_plain_goose.sh
       - name: Save clean video
-        if: success()
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: goose-no-subtitles-cut-before-next-phrase
+          name: goose-no-subtitles-cut-before-next-phrase-v2
           path: КиноГрызь_Гусь_без_субтитров.mp4
           retention-days: 7
