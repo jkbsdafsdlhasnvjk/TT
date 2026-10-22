@@ -17,13 +17,6 @@ jobs:
         run: bash scripts/check_ffmpeg.sh
       - name: Check censored word renderer
         run: python -m py_compile scripts/men_of_honor_censored_ass.py
-      - name: Obtain corrected 87-cut HD picture
-        uses: actions/download-artifact@v4
-        with:
-          name: men-of-honor-faithful-87cut-hd-silent-picture
-          run-id: 39831874006
-          github-token: ${{ github.token }}
-          path: new_picture
       - name: Obtain acoustic word timing data from previous ASR
         uses: actions/download-artifact@v4
         with:
@@ -35,6 +28,26 @@ jobs:
         run: |
           python scripts/men_of_honor_censored_ass.py
           grep -F '******' censored_captions.ass | head -2
+      - name: Wait for completed 87-shot HD picture
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for i in $(seq 1 60); do
+            count=$(gh api repos/jkbsdafsdlhasnvjk/TT/actions/runs/39831874006/artifacts --jq '.artifacts | length' || echo 0)
+            if [ "$count" -gt 0 ]; then
+              echo "HD picture artifact available"
+              exit 0
+            fi
+            sleep 15
+          done
+          exit 1
+      - name: Obtain corrected 87-cut HD picture
+        uses: actions/download-artifact@v4
+        with:
+          name: men-of-honor-faithful-87cut-hd-silent-picture
+          run-id: 39831874006
+          github-token: ${{ github.token }}
+          path: new_picture
       - name: Burn word-synced captions into HD montage
         run: |
           ffmpeg -hide_banner -loglevel error -y \
