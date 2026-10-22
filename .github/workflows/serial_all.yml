@@ -1,4 +1,4 @@
-name: Kinogryz S01 serial ALL footage (natural pauses, no skipped segments)
+name: Kinogryz S01 ALL footage - one minute natural cuts
 on:
   push:
     paths: [".github/workflows/serial_all.yml"]
@@ -24,7 +24,7 @@ jobs:
       - name: Upload exact shared shard boundaries
         uses: actions/upload-artifact@v4
         with:
-          name: kinogryz-s01-serial-exact-shard-seams
+          name: kinogryz-s01-serial-exact-shard-seams-one-minute
           path: serial_seams.json
           retention-days: 30
   all_footage:
@@ -60,7 +60,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: kinogryz-s01-serial-contiguous-${{ matrix.part }}
+          name: kinogryz-s01-serial-one-minute-${{ matrix.part }}
           path: serial_part_${{ matrix.part }}/
           if-no-files-found: warn
           retention-days: 14
