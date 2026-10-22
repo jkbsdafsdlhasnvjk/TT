@@ -1,0 +1,42 @@
+name: Men of Honor faithful 87-cut Full HD picture v3
+on:
+  push:
+    paths:
+      - .github/workflows/men_of_honor_precise_picture.yml
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  precise:
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install FFmpeg
+        run: bash scripts/check_ffmpeg.sh
+      - name: Install movie downloader
+        run: python -m pip install -q yt-dlp
+      - name: Fetch original full HD film (1920x1080)
+        run: |
+          yt-dlp --no-progress --no-playlist -f hls-5404 --concurrent-fragments 10 --retries 7 --fragment-retries 7 "https://ok.ru/video/7191873522312" -o movie_1080.mp4
+          ffprobe -v error -show_entries format=duration,size:stream=width,height,codec_name -of json movie_1080.mp4
+      - name: Build 87 frame-precise edits with smoothly tracked portrait framing
+        run: |
+          python -m py_compile scripts/men_of_honor_picture_87.py
+          python scripts/men_of_honor_picture_87.py --movie movie_1080.mp4 --output men_precise_picture_1080x1920_silent.mp4
+      - name: Preserve complete picture for combining with reference audio
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: men-of-honor-faithful-87cut-hd-silent-picture
+          path: |
+            men_precise_picture_1080x1920_silent.mp4
+            men_precise_qa/
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Publish HD intermediate as direct downloadable MP4
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create men-of-honor-faithful-87cut-hd-picture-v3 men_precise_picture_1080x1920_silent.mp4 --title "Men of Honor (2000) – revised original-cut HD picture" --notes "Intermediate picture only. 87 actual edits precisely aligned to the reference. Reuse the originally provided montage audio and censored word-by-word captions in final postprocessing."
