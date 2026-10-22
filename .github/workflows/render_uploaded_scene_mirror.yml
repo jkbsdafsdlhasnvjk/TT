@@ -1,0 +1,47 @@
+name: Kinogryz 75s mirrored picture - readable word captions v3
+on:
+  push:
+    paths: [".github/workflows/render_uploaded_scene_mirror.yml"]
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate subtitle rendering scripts
+        run: python -m py_compile scripts/render_uploaded_scene.py
+      - name: Prepare FFmpeg with libass
+        run: bash scripts/check_ffmpeg.sh
+      - name: Install media download
+        run: python -m pip install -q gdown
+      - name: Download original unmodified user-provided video
+        run: gdown "https://drive.google.com/uc?id=1qCSpjyRuj8vOPM7ouJiio0W5Bw_GjbWl" -O scene.mp4
+      - name: Retrieve independent word timings from medium Russian speech model
+        uses: actions/download-artifact@v4
+        with:
+          name: kinogryz-uploaded-scene-word-inspection
+          run-id: 39759250163
+          github-token: ${{ github.token }}
+          path: scene_asr
+      - name: Render 9:16 video and burn reviewed word-synced subtitles
+        run: python scripts/render_uploaded_scene.py --source scene.mp4 --segments scene_asr/medium_segments.json --corrections scripts/scene_uploaded_corrections.json --mirror-video-only --output Kinogryz_Kuhnya_uploaded_75s_mirrored_video_normal_captions.mp4
+      - name: Upload finished MP4 and proof of word alignment
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kinogryz-Kuhnya-video-mirror-readable-captions-v3
+          path: |
+            Kinogryz_Kuhnya_uploaded_75s_mirrored_video_normal_captions.mp4
+            scene_render/
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Provide direct MP4 download as GitHub Release asset
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create kinogryz-kuhnya-75s-video-mirror-v3 Kinogryz_Kuhnya_uploaded_75s_mirrored_video_normal_captions.mp4 --title "КиноГрызь — Кухня, зеркальный видеоряд, прямые субтитры (75 сек)" --notes "1080x1920, зеркальный ТОЛЬКО видеоряд, субтитры не отражены; 75.32 сек без обрезки, AAC audio bitstream copy, вшитая пословная подсветка и ****** вместо «Шалава», нет водяного знака."
