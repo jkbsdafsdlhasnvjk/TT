@@ -1,0 +1,68 @@
+[
+  {
+    "word": "Вадик!",
+    "start": 57.06,
+    "end": 57.32,
+    "confidence": 0.9
+  },
+  {
+    "word": "Штаны!",
+    "start": 57.36,
+    "end": 57.84,
+    "confidence": 0.9
+  },
+  {
+    "word": "Штаны",
+    "start": 58.04,
+    "end": 58.54,
+    "confidence": 0.9
+  },
+  {
+    "word": "надень!",
+    "start": 58.84,
+    "end": 59.4,
+    "confidence": 0.9
+  },
+  {
+    "word": "Помоги!",
+    "start": 59.86,
+    "end": 60.3,
+    "confidence": 0.9
+  },
+  {
+    "word": "Сдурел!",
+    "start": 63.92,
+    "end": 64.44,
+    "confidence": 0.9
+  },
+  {
+    "word": "Остановите",
+    "start": 64.56,
+    "end": 65.14,
+    "confidence": 0.9
+  },
+  {
+    "word": "его",
+    "start": 65.14,
+    "end": 65.38,
+    "confidence": 0.9
+  },
+  {
+    "word": "кто-нибудь!",
+    "start": 65.38,
+    "end": 65.94,
+    "confidence": 0.9
+  },
+  {
+    "word": "Стой,",
+    "start": 69.42,
+    "end": 69.82,
+    "confidence": 0.9
+  },
+  {
+    "word": "тварь!",
+    "start": 69.82,
+    "end": 70.3,
+    "confidence": 0.9
+  }
+]
