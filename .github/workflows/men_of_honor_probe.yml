@@ -1,4 +1,4 @@
-name: Men of Honor scene matching
+name: Men of Honor 78-shot visual matching
 on:
   push:
     paths:
@@ -18,15 +18,15 @@ jobs:
         run: python -m pip install -q yt-dlp numpy opencv-python-headless
       - name: Download reference-resolution full film for shot matching
         run: |
-          yt-dlp -f hls-757 --no-playlist --concurrent-fragments 8 --retries 7 --fragment-retries 7 "https://ok.ru/video/7191873522312" -o "film_360.mp4"
+          yt-dlp --no-progress -f hls-757 --no-playlist --concurrent-fragments 8 --retries 7 --fragment-retries 7 "https://ok.ru/video/7191873522312" -o "film_360.mp4"
           ffprobe -v error -show_entries format=duration,size:stream=width,height,codec_name -of json film_360.mp4
-      - name: Locate all 60 unique moments within the full film
-        run: python scripts/men_of_honor_match.py film_360.mp4
+      - name: Locate all 78 shots with robust 256-bit hashes
+        run: python scripts/men_of_honor_match16.py film_360.mp4
       - name: Upload scene matching report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: men-of-honor-scene-map
-          path: men_match.json
+          name: men-of-honor-78-shot-map
+          path: men_shots_matched16.json
           if-no-files-found: warn
           retention-days: 7
