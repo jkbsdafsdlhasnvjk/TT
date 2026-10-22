@@ -1,0 +1,32 @@
+name: Men of Honor corrected subtitle timing test
+on:
+  push:
+    paths: [.github/workflows/men_subtitle_test.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and test transcript word alignment without ASR download
+        run: |
+          python -m py_compile scripts/men_of_honor_hd_verified.py scripts/men_of_honor_caption_render.py
+          python - <<'PY'
+          import ast,json,re
+          from pathlib import Path
+          src=ast.parse(Path("scripts/men_of_honor_caption_render.py").read_text())
+          names={'canonical_words_from_srt','regroup','create_ass','timestamp'}
+          nodes=[x for x in src.body if isinstance(x,ast.FunctionDef) and x.name in names]
+          globals_={"Path":Path,"re":re,"HEADER":next(ast.literal_eval(x.value) for x in src.body if isinstance(x,ast.Assign) and any(isinstance(t,ast.Name) and t.id=="HEADER" for t in x.targets))}
+          exec(compile(ast.Module(body=nodes,type_ignores=[]),"<caption-test>","exec"),globals_)
+          words,diagnostics=globals_["canonical_words_from_srt"]("scripts/men_of_honor_reference_speech.srt",[],179.6)
+          assert 250<len(words)<600,len(words)
+          assert len(diagnostics)==55,len(diagnostics)
+          assert all(0<=w["start"]<w["end"]<=179.6 for w in words)
+          assert all(words[i+1]["start"]>=words[i]["start"] for i in range(len(words)-1))
+          phrases=globals_["create_ass"](words,179.6,Path("captions_test.ass"))
+          assert len(phrases)>=40
+          print("PASSED",len(words),"WORDS",len(phrases),"CAPTION PHRASES")
+          PY
