@@ -43,6 +43,10 @@ def words_in(segments, corrections):
         if idx<0 or idx>=len(out):raise ValueError(f"Invalid manual correction word index {idx}")
         assert out[idx]["word"]==c["expected"], f"Correction mismatch at {idx}: expected {c['expected']}, got {out[idx]['word']}"
         out[idx]["word"]=c["replace"]
+    drops=corrections.get("drop_indices",[]) if isinstance(corrections,dict) else []
+    for idx in sorted((int(x) for x in drops),reverse=True):
+        assert 0<=idx<len(out)
+        del out[idx]
     splices=corrections.get("splices",[]) if isinstance(corrections,dict) else []
     for p in sorted(splices,key=lambda x:x["from"],reverse=True):
         a,b=int(p["from"]),int(p["to"])
@@ -111,6 +115,11 @@ def main():
                           "-of","json",str(source)]))
     duration=float(meta["format"]["duration"])
     words=words_in(segs,patches)
+    tailfile=Path("scripts/scene_uploaded_tail.json")
+    if tailfile.exists():
+        tail=json.loads(tailfile.read_text(encoding="utf-8"))
+        words.extend({"start":w["start"],"end":w["end"],"word":w["word"],"confidence":w.get("confidence",.9)} for w in tail)
+        words.sort(key=lambda w:w["start"])
     if len(words)<10:raise RuntimeError("Insufficient speech recognition for subtitles")
     groups=sentence_groups(words)
     lines=[];prev=0
