@@ -1,4 +1,4 @@
-name: Kinogryz 75s mirrored picture - readable word captions v3
+name: Kinogryz 75s mirrored picture - readable word captions v3 corrected
 on:
   push:
     paths: [".github/workflows/render_uploaded_scene_mirror.yml"]
