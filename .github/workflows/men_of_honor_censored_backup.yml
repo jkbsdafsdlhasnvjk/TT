@@ -1,0 +1,75 @@
+name: Men of Honor 87-cut backup HD clean captions
+on:
+  push:
+    paths:
+      - .github/workflows/men_of_honor_censored_backup.yml
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+jobs:
+  captions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install FFmpeg
+        run: bash scripts/check_ffmpeg.sh
+      - name: Check censored word renderer
+        run: python -m py_compile scripts/men_of_honor_censored_ass.py
+      - name: Obtain acoustic word timing data from previous ASR
+        uses: actions/download-artifact@v4
+        with:
+          name: Men-of-Honor-HD-9x16-finished
+          run-id: 39774396530
+          github-token: ${{ github.token }}
+          path: previous_qa
+      - name: Build accurate revised Russian subtitles with censorship
+        run: |
+          python scripts/men_of_honor_censored_ass.py
+          grep -F '******' censored_captions.ass | head -2
+      - name: Wait for completed 87-shot HD picture
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for i in $(seq 1 60); do
+            count=$(gh api repos/jkbsdafsdlhasnvjk/TT/actions/runs/39833190143/artifacts --jq '.artifacts | length' || echo 0)
+            if [ "$count" -gt 0 ]; then
+              echo "HD picture artifact available"
+              exit 0
+            fi
+            sleep 15
+          done
+          exit 1
+      - name: Obtain corrected 87-cut HD picture
+        uses: actions/download-artifact@v4
+        with:
+          name: men-of-honor-faithful-87cut-720-backup
+          run-id: 39833190143
+          github-token: ${{ github.token }}
+          path: new_picture
+      - name: Burn word-synced captions into HD montage
+        run: |
+          ffmpeg -hide_banner -loglevel error -y \
+            -i new_picture/men_precise_picture_1080x1920_silent.mp4 \
+            -vf ass=censored_captions.ass \
+            -an -c:v libx264 -preset veryfast -crf 17 -r 30 -pix_fmt yuv420p \
+            -movflags +faststart Men_of_Honor_87cut_censored_1080x1920_silent.mp4
+          ffprobe -v error -show_entries format=duration,size:stream=codec_name,codec_type,width,height -of json Men_of_Honor_87cut_censored_1080x1920_silent.mp4
+      - name: Save polished video and QA
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: men-of-honor-87cut-censored-720-backup
+          path: |
+            Men_of_Honor_87cut_censored_1080x1920_silent.mp4
+            censored_captions.ass
+            men_precise_qa/
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Publish ready video master
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create men-of-honor-87cut-censored-720-backup Men_of_Honor_87cut_censored_1080x1920_silent.mp4 --title "Men of Honor – 87 shot corrected HD subtitled video master" --notes "Prepared for original 179.584 second uploaded montage audio to be muxed into final MP4. Racial slurs are rendered as asterisks."
