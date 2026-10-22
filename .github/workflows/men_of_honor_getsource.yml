@@ -1,0 +1,27 @@
+name: Men of Honor 360p master for accurate local scene matching
+on:
+  push:
+    paths: [.github/workflows/men_of_honor_getsource.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download 360p reference film without remux
+        run: |
+          python -m pip install -q yt-dlp
+          yt-dlp --fixup never --no-progress -f hls-757 --concurrent-fragments 10 "https://ok.ru/video/7191873522312" -o "movie_360.ts"
+          ls -lh movie_360.ts
+          file movie_360.ts
+      - name: Preserve source for accurate full-length image matching
+        uses: actions/upload-artifact@v4
+        with:
+          name: men-of-honor-360p-full-movie-internal
+          path: movie_360.ts
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 1
