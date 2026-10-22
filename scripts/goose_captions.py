@@ -53,7 +53,7 @@ def split_at(words):
 
 CAPTION_PRE_ROLL = 0.10
 CAPTION_HOLD = 0.70
-HIGHLIGHT_LEAD = 0.22
+HIGHLIGHT_LEAD = 0.28
 MAX_HIGHLIGHT = 0.85
 CLIP_DURATION = 60.48
 
@@ -66,7 +66,10 @@ for i, words in enumerate(word_times):
     # Do not pin its onset to the END of the previous spoken word: that
     # previously caused late captions in rapid, back-to-back dialogue.
     early = max(0.0, first - HIGHLIGHT_LEAD - CAPTION_PRE_ROLL)
-    starts.append(max(early, starts[-1] + 0.04 if starts else 0.0))
+    previous_end = word_times[i-1][-1][1] if i else 0.0
+    # No later than the start of speech: the next phrase may start only
+    # when the previous phrase has finished speaking.
+    starts.append(max(early, previous_end + 0.01 if i else 0.0))
 events = []
 for i, (_, _, sentence) in enumerate(lines):
     words = [esc(w) for w in sentence.split()]
