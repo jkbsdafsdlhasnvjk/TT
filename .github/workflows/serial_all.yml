@@ -1,5 +1,7 @@
 name: Kinogryz S01 serial ALL footage (natural pauses, no skipped segments)
 on:
+  push:
+    paths: [".github/workflows/serial_all.yml"]
   workflow_dispatch:
 permissions:
   contents: read
