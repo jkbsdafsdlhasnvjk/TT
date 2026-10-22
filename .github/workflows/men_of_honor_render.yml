@@ -1,4 +1,4 @@
-name: Kinogryz Men of Honor HD verified montage
+name: Kinogryz Men of Honor HD precise picture and duration v2
 on:
   push:
     paths:
@@ -45,4 +45,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create men-of-honor-20261022-9x16-hd Voenny_Nyryalshchik_2000_1080p_9x16_Kinogryz.mp4 --title "КиноГрызь: Военный ныряльщик (2000), HD 9:16" --notes "HD кадры из исходного фильма, 78 восстановленных монтажных переходов, 1080x1920 с размытым фоном без зеркалирования, вшитые русские пословные субтитры." 
+          gh release create men-of-honor-20261022-9x16-hd-v2 Voenny_Nyryalshchik_2000_1080p_9x16_Kinogryz.mp4 --title "КиноГрызь: Военный ныряльщик (2000), HD 9:16" --notes "HD кадры из исходного фильма, 78 восстановленных монтажных переходов, 1080x1920 с размытым фоном без зеркалирования, вшитые русские пословные субтитры." 
