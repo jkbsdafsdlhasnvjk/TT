@@ -1,5 +1,7 @@
 name: Kinogryz Season 1 - full coverage
 on:
+  push:
+    paths: [".github/workflows/season_full.yml"]
   workflow_dispatch:
 permissions:
   contents: read
