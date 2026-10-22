@@ -26,9 +26,13 @@ Style: Word,DejaVu Sans,53,&H00FFFFFF,&H0000FFFF,&H00000000,&H64000000,-1,0,0,0,
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 MAX_WORDS_PER_LINE = 9
-MIN_PART = 54.
-TARGET_PART = 92.
-MAX_PART = 126.
+MIN_PART = 38.
+TARGET_PART = 60.
+# A longer part is permissible only if no safe dialogue boundary is near a minute.
+MAX_PART = 112.
+PREFERRED_MIN = 45.
+PREFERRED_MAX = 76.
+FINISH_WHOLE_IF_UNDER = 86.
 
 def command(argv):
     return subprocess.run(argv,stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=True)
@@ -123,27 +127,46 @@ def possible_cuts(words,silences,lo,hi):
     return cuts
 
 def closest_safe_boundary(cursor,hi,cuts,words):
+    """Prefer a complete exchange near 60s; never choose a mid-word cut.
+
+    A safe point should follow sentence punctuation, a clear dialogue pause,
+    or soundtrack silence. The extra length is a fallback, not the default.
+    """
     earliest=cursor+MIN_PART
-    latest=min(cursor+MAX_PART,hi)
-    near=[(t,s,kind,gap) for t,s,kind,gap in cuts if earliest<=t<=latest]
-    if near:
-        # Avoid tiny final part where possible.
-        scored=sorted(near,key=lambda x:(x[1] - abs(x[0]-(cursor+TARGET_PART))*.065),reverse=True)
-        choice=scored[0]
+    latest=min(cursor+MAX_PART,hi-MIN_PART)
+    if latest<earliest:
+        raise RuntimeError(f"No feasible split of remaining {hi-cursor:.1f}s")
+    near=[(t,s,kind,gap) for t,s,kind,gap in cuts if earliest<=t<=latest
+          and all(not w["start"]-.09<t<w["end"]+.09 for w in words)]
+    strong=[x for x in near if x[1]>=2.05]
+    preferred=[x for x in strong if PREFERRED_MIN<=x[0]-cursor<=PREFERRED_MAX]
+    if preferred:
+        # Strong natural dialogue endings close to one minute win.
+        choice=max(preferred,key=lambda x:x[1]-abs(x[0]-cursor-TARGET_PART)*.10)
         return round(choice[0],2),choice[2],round(choice[1],2)
-    # If the film has no gap in the desired window (continuous music etc.),
-    # use a point outside ASR speech, and explicitly classify it as a fallback.
-    for offset in [0,5,-5,10,-10,15,-15,20,-20,25,-25]:
+    if strong:
+        choice=max(strong,key=lambda x:x[1]-abs(x[0]-cursor-TARGET_PART)*.10)
+        return round(choice[0],2),choice[2],round(choice[1],2)
+    # When punctuation is unreliable in ASR, a longer real speech gap
+    # is preferable to a cut in the middle of a conversation.
+    if near:
+        choice=max(near,key=lambda x:x[1]-abs(x[0]-cursor-TARGET_PART)*.13)
+        if choice[3]>=.40:
+            return round(choice[0],2),choice[2],round(choice[1],2)
+    # Last resort: mark fallbacks for human inspection.
+    for offset in [0,5,-5,10,-10,15,-15,20,-20,25,-25,30,-30,35,-35,40,-40]:
         t=min(latest-.1,max(earliest+.1,cursor+TARGET_PART+offset))
-        if all(not w["start"]-.14<t<w["end"]+.14 for w in words):
-            return round(t,2),"nonword_fallback",0
-    raise RuntimeError(f"No safe split at {cursor:.2f}. Never split an audible word.")
+        if all(not w["start"]-.16<t<w["end"]+.16 for w in words):
+            return round(t,2),"nonword_fallback_REVIEW",0
+    raise RuntimeError(f"No safe split at {cursor:.2f}; refused to divide spoken word.")
 
 def build_spans(words,silences,lo,hi):
     cuts=possible_cuts(words,silences,lo,hi)
     spans=[]
     cursor=lo
-    while hi-cursor>MAX_PART:
+    # Keep the last natural section intact when it is already under 86s.
+    # Otherwise find a good whole-phrase finish around the next minute.
+    while hi-cursor>FINISH_WHOLE_IF_UNDER:
         cut,reason,score=closest_safe_boundary(cursor,hi,cuts,words)
         if cut<=cursor:raise RuntimeError("Bad split order")
         spans.append({"start":round(cursor,2),"end":cut,"reason":reason,"score":score})
