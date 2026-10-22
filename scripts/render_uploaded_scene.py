@@ -37,11 +37,22 @@ def words_in(segments, corrections):
             if bare in ("шалава", "шолава", "шалова"):
                 token="******"+("!" if token.endswith("!") else ("?" if token.endswith("?") else ""))
             out.append({"start":w["start"],"end":w["end"],"word":token,"confidence":w.get("prob",1.)})
-    for c in corrections:
+    simple=corrections.get("words",[]) if isinstance(corrections,dict) else corrections
+    for c in simple:
         idx=int(c["index"])
         if idx<0 or idx>=len(out):raise ValueError(f"Invalid manual correction word index {idx}")
         assert out[idx]["word"]==c["expected"], f"Correction mismatch at {idx}: expected {c['expected']}, got {out[idx]['word']}"
         out[idx]["word"]=c["replace"]
+    splices=corrections.get("splices",[]) if isinstance(corrections,dict) else []
+    for p in sorted(splices,key=lambda x:x["from"],reverse=True):
+        a,b=int(p["from"]),int(p["to"])
+        assert 0<=a<=b<len(out)
+        old=" ".join(w["word"] for w in out[a:b+1])
+        assert old==p["expected"],f"Splice mismatch at {a}: {old}"
+        repl=[{"start":w["start"],"end":w["end"],"word":w["word"],"confidence":1.}
+              for w in p["replace"]]
+        assert all(repl[i]["start"]<repl[i]["end"] for i in range(len(repl)))
+        out[a:b+1]=repl
     for w in out:
         bare=re.sub(r"^[^а-яё]+|[^а-яё]+$","",w["word"].lower())
         if bare in ("шалава","шолава","шалова"):w["word"]="******"
