@@ -1,4 +1,4 @@
-name: Men of Honor HD system FFmpeg final
+name: Men of Honor HD corrected subtitle timing v2
 on:
   push:
     paths: [.github/workflows/men_of_honor_hdfinal.yml]
@@ -39,7 +39,7 @@ jobs:
           python scripts/men_of_honor_hd_verified.py --movie movie_1080.mp4 --shots scripts/men_of_honor_shots.json --output men_montage_hd.mp4
       - name: Make portrait blurred canvas and synced Russian captions
         run: |
-          python scripts/men_of_honor_caption_render.py --source men_montage_hd.mp4 --output Voenny_Nyryalshchik_HD_Kinogryz_9x16.mp4
+          python scripts/men_of_honor_caption_render.py --source men_montage_hd.mp4 --output Voenny_Nyryalshchik_HD_Kinogryz_9x16_v2.mp4
       - name: Verify output
         run: |
           ffprobe -v error -show_entries format=duration,size:stream=codec_type,codec_name,width,height -of json Voenny_Nyryalshchik_HD_Kinogryz_9x16.mp4
@@ -47,7 +47,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Men-of-Honor-HD-completed-9x16
+          name: Men-of-Honor-HD-corrected-captions-v2
           path: |
             Voenny_Nyryalshchik_HD_Kinogryz_9x16.mp4
             men_render/
@@ -59,4 +59,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create men-of-honor-hd-9x16-final Voenny_Nyryalshchik_HD_Kinogryz_9x16.mp4 --title "Военный ныряльщик HD, 9:16, КиноГрызь" --notes "Full-HD source, blurred background, no mirrored footage, Russian word-highlight captions; reconstructed original ~180sec montage."
+          gh release create men-of-honor-hd-9x16-synced-v2 Voenny_Nyryalshchik_HD_Kinogryz_9x16.mp4 --title "Военный ныряльщик HD, 9:16, КиноГрызь" --notes "Full-HD source, blurred background, no mirrored footage, Russian word-highlight captions; reconstructed original ~180sec montage."
