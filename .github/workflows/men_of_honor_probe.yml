@@ -12,6 +12,8 @@ jobs:
     timeout-minutes: 65
     steps:
       - uses: actions/checkout@v4
+      - name: Install FFmpeg
+        run: bash scripts/check_ffmpeg.sh
       - name: Install 360p extractor and pHash dependencies
         run: python -m pip install -q yt-dlp numpy opencv-python-headless
       - name: Download reference-resolution full film for shot matching
