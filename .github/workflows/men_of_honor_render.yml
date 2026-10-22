@@ -1,0 +1,57 @@
+name: Men of Honor HD vertical montage and synced captions
+on:
+  push:
+    paths:
+      - .github/workflows/men_of_honor_render.yml
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install FFmpeg
+        run: bash scripts/check_ffmpeg.sh
+      - name: Install HD media downloader and Russian speech tools
+        run: python -m pip install -q yt-dlp numpy opencv-python-headless faster-whisper==1.2.1
+      - name: Retrieve verified full-resolution 1080p movie master
+        run: |
+          yt-dlp --no-progress --no-playlist -f hls-5404 --concurrent-fragments 8 --retries 7 --fragment-retries 7 "https://ok.ru/video/7191873522312" -o movie_1080.mp4
+          ffprobe -v error -show_entries format=duration,size:stream=width,height,codec_name -of json movie_1080.mp4
+      - name: Pull corrected and validated montage scripts
+        run: |
+          git fetch --depth=1 origin main
+          git reset --hard origin/main
+      - name: Download matched 78 shot timestamps
+        uses: actions/download-artifact@v4
+        with:
+          name: men-of-honor-78-shot-map
+          run-id: 39766907126
+          github-token: ${{ github.token }}
+          path: men_alignment/
+      - name: Restore the identical 179.584s film montage in HD without advertisement
+        run: |
+          python scripts/men_of_honor_reconstruct.py --movie movie_1080.mp4 --shots scripts/men_of_honor_shots.json --matches men_alignment/men_shots_matched16.json --output men_montage_hd.mp4
+          ffprobe -v error -show_entries format=duration,size:stream=width,height,codec_name -of json men_montage_hd.mp4
+      - name: Transcribe exact Russian speech with timestamps and burn stable captions
+        run: python scripts/men_of_honor_caption_render.py --source men_montage_hd.mp4 --output Voenny_Nyryalshchik_1080p_9x16_Synced_Subtitles.mp4
+      - name: Save final MP4 and subtitle diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: men-of-honor-1080p-full-captions
+          path: |
+            Voenny_Nyryalshchik_1080p_9x16_Synced_Subtitles.mp4
+            men_render/
+            men_alignment/
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Publish direct MP4 file for downloading
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create men-of-honor-9x16-v1 Voenny_Nyryalshchik_1080p_9x16_Synced_Subtitles.mp4 --title "Военный ныряльщик — 1080p монтаж, 9:16" --notes "Сцены из фильма Men of Honor (2000), вертикальная композиция с размытым фоном, без зеркалирования и рекламных плашек, вшитые субтитры с подсветкой каждого слова."
