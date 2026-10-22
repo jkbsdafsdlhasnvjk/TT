@@ -1,0 +1,21 @@
+name: Men of Honor portable FFmpeg readiness
+on:
+  push:
+    paths: [.github/workflows/men_portable_probe.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Portable FFmpeg codec capability
+        run: |
+          python -m pip install -q imageio-ffmpeg av
+          FF=$(python -c 'import imageio_ffmpeg;print(imageio_ffmpeg.get_ffmpeg_exe())')
+          echo "$FF"
+          "$FF" -version | head -4
+          "$FF" -hide_banner -filters | grep -E ' ass | subtitles | boxblur | scale | crop '
+          python -c "import av;print('PyAV version:',av.__version__)"
