@@ -1,0 +1,62 @@
+name: Men of Honor HD system FFmpeg final
+on:
+  push:
+    paths: [.github/workflows/men_of_honor_hdfinal.yml]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 85
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install FFmpeg with bounded apt timeout
+        run: |
+          set -e
+          if ! command -v ffmpeg >/dev/null; then
+            timeout 125 sudo apt-get update -qq || true
+            timeout 125 sudo apt-get install -y -qq ffmpeg || true
+          fi
+          if ! command -v ffmpeg >/dev/null; then
+            echo "System FFmpeg missing, trying static"
+            curl --connect-timeout 15 --max-time 80 -LfsS https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz -o /tmp/ffmpeg-static.tar.xz
+            mkdir -p /tmp/static-ffmpeg
+            tar -xf /tmp/ffmpeg-static.tar.xz --strip-components=1 -C /tmp/static-ffmpeg
+            echo /tmp/static-ffmpeg >> "$GITHUB_PATH"
+          fi
+          ffmpeg -version | head -n 1
+          ffmpeg -hide_banner -filters | grep ' ass ' || true
+      - name: Install downloader and Russian speech alignment
+        run: python -m pip install -q yt-dlp numpy faster-whisper==1.2.1
+      - name: Download actual 1080p film
+        run: |
+          yt-dlp --no-progress --no-playlist -f hls-5404 --concurrent-fragments 8 --retries 7 --fragment-retries 7 "https://ok.ru/video/7191873522312" -o movie_1080.mp4
+          ffprobe -v error -show_entries format=duration,size:stream=width,height,codec_name -of json movie_1080.mp4
+      - name: Reconstruct actual HD montage with all 78 shot boundaries
+        run: |
+          python -m py_compile scripts/men_of_honor_hd_verified.py scripts/men_of_honor_caption_render.py
+          python scripts/men_of_honor_hd_verified.py --movie movie_1080.mp4 --shots scripts/men_of_honor_shots.json --output men_montage_hd.mp4
+      - name: Make portrait blurred canvas and synced Russian captions
+        run: |
+          python scripts/men_of_honor_caption_render.py --source men_montage_hd.mp4 --output Voenny_Nyryalshchik_HD_Kinogryz_9x16.mp4
+      - name: Verify output
+        run: |
+          ffprobe -v error -show_entries format=duration,size:stream=codec_type,codec_name,width,height -of json Voenny_Nyryalshchik_HD_Kinogryz_9x16.mp4
+      - name: Upload output and QA
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Men-of-Honor-HD-completed-9x16
+          path: |
+            Voenny_Nyryalshchik_HD_Kinogryz_9x16.mp4
+            men_render/
+          compression-level: 0
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Publish direct download release
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create men-of-honor-hd-9x16-final Voenny_Nyryalshchik_HD_Kinogryz_9x16.mp4 --title "Военный ныряльщик HD, 9:16, КиноГрызь" --notes "Full-HD source, blurred background, no mirrored footage, Russian word-highlight captions; reconstructed original ~180sec montage."
