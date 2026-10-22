@@ -1,0 +1,42 @@
+name: Goose audio transcript QA and clean video
+on:
+  push:
+    paths: [".github/workflows/asr_review.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify_audio:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install FFmpeg
+        run: bash scripts/check_ffmpeg.sh
+      - name: Download source
+        run: bash scripts/fetch_season.sh
+      - name: Extract the actual scene audio
+        run: ffmpeg -hide_banner -loglevel error -y -ss 3095.4 -i season.mp4 -t 58.60 -vn -ac 1 -ar 16000 goose_audio.wav
+      - name: Recognize real word boundaries from scene sound
+        run: python -m pip install -q faster-whisper==1.2.1 && python scripts/asr_goose.py
+      - name: Save diagnostic word transcription
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: goose-asr-words
+          path: |
+            asr_raw_words.json
+            goose_audio_alignment_review.json
+            goose_word_times.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Render the version without subtitles
+        if: always()
+        run: bash scripts/render_plain_goose.sh
+      - name: Save clean video
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: goose-no-subtitles-cut-before-next-phrase
+          path: КиноГрызь_Гусь_без_субтитров.mp4
+          retention-days: 7
