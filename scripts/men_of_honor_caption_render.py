@@ -71,6 +71,82 @@ def create_ass(words,length,path):
     print("SUBTITLES",len(words),"words",len(rows),"stable phrases",flush=True)
     return rows
 
+
+def canonical_words_from_srt(path, rough_words, length):
+    """Use reviewed original-clip transcription and anchor each word to medium ASR when acoustically recognized."""
+    from difflib import SequenceMatcher
+    def seconds(s):
+        hh,mm,ss=s.replace(",",".").split(":")
+        return 3600*int(hh)+60*int(mm)+float(ss)
+    def norm(s):
+        return re.sub(r"[^а-яa-z0-9]+","",s.lower().replace("ё","е"))
+    srt=Path(path).read_text(encoding="utf-8-sig")
+    cues=[]
+    for block in re.split(r"\n\s*\n",srt.strip()):
+        lines=[s.strip() for s in block.splitlines() if s.strip()]
+        if len(lines)<3 or "-->" not in lines[1]:continue
+        a,b=[seconds(t.strip()) for t in lines[1].split("-->")]
+        caption=" ".join(lines[2:])
+        if a>=length:continue
+        tokens=caption.split()
+        if tokens:
+            cues.append((max(0.,a),min(length,b),tokens))
+    if len(cues)<30:raise RuntimeError("Reviewed original-reference SRT missing cues")
+    words=[]
+    diag=[]
+    for k,(a,b,tokens) in enumerate(cues):
+        m=len(tokens)
+        recognized=[z for z in rough_words if z["start"]>=a-.33 and z["start"]<=b+.34]
+        original=[norm(z) for z in tokens]
+        approximate=[norm(z["word"]) for z in recognized]
+        matcher=SequenceMatcher(None,original,approximate,autojunk=False)
+        pairs=[]
+        for block in matcher.get_matching_blocks():
+            for q in range(block.size):
+                i=block.a+q
+                rec=recognized[block.b+q]
+                tim=float(rec["start"])
+                if a-.14<=tim<=b+.14:
+                    pairs.append((i,max(a,min(b-.025,tim))))
+        # Pick monotonic, in-window acoustic anchors.
+        anchors={-1:max(0.,a-.07),m:b}
+        last_index=-1;last_t=a-.07
+        for i,t in sorted(pairs):
+            if i>last_index and t>last_t+.007 and t<b:
+                anchors[i]=t
+                last_index,last_t=i,t
+        starts=[None]*m
+        indices=sorted(anchors)
+        for j in range(len(indices)-1):
+            li,ri=indices[j],indices[j+1]
+            ta,tb=anchors[li],anchors[ri]
+            if ri-li<=0 or tb<=ta:continue
+            unresolved=list(range(li+1,ri+1))
+            weights=[max(2.5,len(original[z])**.7) if z<m else 2.5 for z in unresolved]
+            total=sum(weights)
+            elapsed=0.
+            for z,w in zip(unresolved,weights):
+                if z<m:
+                    starts[z]=ta+(tb-ta)*(elapsed/total)
+                elapsed+=w
+        for i,t in pairs:
+            if i in anchors and i>=0:
+                starts[i]=anchors[i]
+        # Clamp and keep strict text/timing order.
+        for i in range(m):
+            if starts[i] is None:starts[i]=a+(b-a)*i/m
+            starts[i]=max(a, min(b-.035,starts[i]))
+            if i:starts[i]=max(starts[i],min(b-.02,starts[i-1]+.019))
+        for i,token in enumerate(tokens):
+            onset=starts[i]
+            subsequent=starts[i+1] if i+1<m else b
+            stop=min(b,max(onset+.026,subsequent-.012))
+            if stop<=onset:stop=min(length,onset+.025)
+            words.append({"start":round(onset,3),"end":round(stop,3),"word":token,"probability":1.0})
+        diag.append({"index":k,"start":a,"end":b,"words":m,"matched_asr_words":len(anchors)-2})
+    print("REVIEWED_SRT_CAPTIONS",len(cues),"WORDS",len(words),"MATCHED",sum(x["matched_asr_words"] for x in diag),flush=True)
+    return words,diag
+
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--source",required=True)
@@ -79,7 +155,7 @@ def main():
     output=Path("men_render");output.mkdir(exist_ok=True)
     probe=json.loads(subprocess.check_output(["ffprobe","-v","error","-show_entries","format=duration:stream=codec_type,width,height","-of","json",args.source]))
     length=float(probe["format"]["duration"])
-    audio=subprocess.check_output(["ffmpeg","-v","error","-i",args.source,"-vn","-ac","1","-ar","16000","-f","s16le","-"])
+    audio=subprocess.check_output(["ffmpeg","-v","error","-i",args.source,"-vn","-ac","1","-ar","16000","-af","aresample=async=1000:first_pts=0","-f","s16le","-"])
     audio=np.frombuffer(audio,dtype=np.int16).astype(np.float32)/32768.0
     print("TRANSCRIBE medium ru WAV secs",round(len(audio)/16000,2),flush=True)
     model=WhisperModel("medium",device="cpu",compute_type="int8",cpu_threads=4)
@@ -99,6 +175,9 @@ def main():
         segment_rows.append({"start":s.start,"end":s.end,"text":s.text.strip(),"words":word_items})
         print("SPEECH",round(s.start,1),s.text.strip(),flush=True)
     words.sort(key=lambda z:z["start"])
+    (output/"raw_asr_words.json").write_text(json.dumps(words,ensure_ascii=False,indent=2))
+    words,caption_diagnostics=canonical_words_from_srt("scripts/men_of_honor_reference_speech.srt",words,length)
+    (output/"caption_alignment.json").write_text(json.dumps(caption_diagnostics,ensure_ascii=False,indent=2))
     (output/"speech_words.json").write_text(json.dumps(words,ensure_ascii=False,indent=2))
     (output/"speech_segments.json").write_text(json.dumps(segment_rows,ensure_ascii=False,indent=2))
     (output/"transcript.txt").write_text(" ".join(w["word"] for w in words),encoding="utf-8")
