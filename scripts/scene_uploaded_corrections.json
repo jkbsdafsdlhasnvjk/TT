@@ -1,0 +1,123 @@
+{
+  "note": "Manually reviewed obvious medium-ASR errors against dialogue transcription. Every edit preserves or repositions actual speech word timestamps.",
+  "words": [
+    {
+      "index": 14,
+      "expected": "получше.",
+      "replace": "получится."
+    },
+    {
+      "index": 28,
+      "expected": "рассталась.",
+      "replace": "рассталась,"
+    },
+    {
+      "index": 29,
+      "expected": "В",
+      "replace": "в"
+    },
+    {
+      "index": 35,
+      "expected": "поустречалась.",
+      "replace": "повстречала."
+    },
+    {
+      "index": 55,
+      "expected": "виновата.",
+      "replace": "виновата,"
+    },
+    {
+      "index": 56,
+      "expected": "Что",
+      "replace": "что"
+    },
+    {
+      "index": 60,
+      "expected": "связалось?",
+      "replace": "связалась."
+    },
+    {
+      "index": 104,
+      "expected": "Гуся.",
+      "replace": "гуся"
+    },
+    {
+      "index": 107,
+      "expected": "порвать?",
+      "replace": "подавать?"
+    },
+    {
+      "index": 109,
+      "expected": "мужку,",
+      "replace": "пушку,"
+    }
+  ],
+  "splices": [
+    {
+      "from": 70,
+      "to": 75,
+      "expected": "Что я тебе муж шлёпку связал?",
+      "replace": [
+        {
+          "word": "С",
+          "start": 35.7,
+          "end": 35.79
+        },
+        {
+          "word": "этим",
+          "start": 35.79,
+          "end": 36.13
+        },
+        {
+          "word": "ушлёпком",
+          "start": 36.13,
+          "end": 36.64
+        },
+        {
+          "word": "связалась?",
+          "start": 36.64,
+          "end": 37.06
+        }
+      ]
+    },
+    {
+      "from": 85,
+      "to": 85,
+      "expected": "девушкой",
+      "replace": [
+        {
+          "word": "с",
+          "start": 40.8,
+          "end": 40.94
+        },
+        {
+          "word": "девушкой",
+          "start": 40.94,
+          "end": 41.24
+        }
+      ]
+    },
+    {
+      "from": 95,
+      "to": 96,
+      "expected": "чё сказал?",
+      "replace": [
+        {
+          "word": "Ты",
+          "start": 45.95,
+          "end": 46.03
+        },
+        {
+          "word": "чё",
+          "start": 46.03,
+          "end": 46.18
+        },
+        {
+          "word": "сказал?",
+          "start": 46.18,
+          "end": 46.47
+        }
+      ]
+    }
+  ]
+}
