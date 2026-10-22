@@ -51,9 +51,9 @@ def split_at(words):
         if accum >= half: return i + 1
     return len(words)
 
-CAPTION_PRE_ROLL = 0.13
+CAPTION_PRE_ROLL = 0.10
 CAPTION_HOLD = 0.70
-HIGHLIGHT_LEAD = 0.06
+HIGHLIGHT_LEAD = 0.22
 MAX_HIGHLIGHT = 0.85
 CLIP_DURATION = 60.48
 
@@ -62,8 +62,11 @@ CLIP_DURATION = 60.48
 starts = []
 for i, words in enumerate(word_times):
     first = words[0][0]
-    previous_word_end = word_times[i-1][-1][1] if i else 0.0
-    starts.append(max(0.0, first-CAPTION_PRE_ROLL, previous_word_end+0.02 if i else 0.0))
+    # Show the stable phrase before the very first phoneme is heard.
+    # Do not pin its onset to the END of the previous spoken word: that
+    # previously caused late captions in rapid, back-to-back dialogue.
+    early = max(0.0, first - HIGHLIGHT_LEAD - CAPTION_PRE_ROLL)
+    starts.append(max(early, starts[-1] + 0.04 if starts else 0.0))
 events = []
 for i, (_, _, sentence) in enumerate(lines):
     words = [esc(w) for w in sentence.split()]
@@ -78,11 +81,17 @@ for i, (_, _, sentence) in enumerate(lines):
         end = min(end, starts[i+1]-0.01)
     assert end >= last-0.015 and end > start, (i,start,end,last)
     cut = split_at(words)
+    # Exclusive, anticipatory karaoke: each word illuminates BEFORE its
+    # acoustic onset. The previous highlight turns off at that instant.
+    # This guarantees there is never a visibly late per-word color change
+    # caused by a gap between separately timed subtitle events.
+    onsets = [max(start, a - HIGHLIGHT_LEAD) for a, b in timings]
+    assert all(onsets[k+1] >= onsets[k]-0.001 for k in range(len(onsets)-1)), (i,onsets)
     styled = []
     for j,token in enumerate(words):
-        begin,finish = timings[j]
-        begin = max(start,begin-HIGHLIGHT_LEAD)
-        finish = min(end, max(begin+0.05, min(finish-HIGHLIGHT_LEAD, begin+MAX_HIGHLIGHT)))
+        begin = onsets[j]
+        next_onset = onsets[j+1] if j+1<len(words) else min(end, timings[j][1]-HIGHLIGHT_LEAD+0.06)
+        finish = min(end, begin + MAX_HIGHLIGHT, max(begin, next_onset))
         b = int(round(1000*(begin-start))); e=int(round(1000*(finish-start)))
         if b <= 0:
             tag = '{\\1c&H00D7FF&' + f'\\t({e},{e+1},\\1c&HFFFFFF&)' + '}'
@@ -98,7 +107,7 @@ print('STABLE_PHRASE_EVENTS',len(events), 'WORDS',sum(map(len,word_times)))
 # Validate the actual ASS file events, not only the word-alignment source.
 from math import isfinite
 for i in range(1,len(starts)):
-    assert starts[i] >= word_times[i-1][-1][1] - 0.01
+    assert starts[i] > starts[i-1]
 assert len(events) == len(lines) == len(word_times)
 for i, e in enumerate(events):
     assert e.count(chr(92)+'t(') >= len(word_times[i]), (i,'missing highlight transforms')
