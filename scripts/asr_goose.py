@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Independent ASR alignment: timing comes from the audio, not uniform shifts."""
-import ast, json, re, unicodedata
+import ast, json, re, unicodedata, wave
+import numpy as np
 from difflib import SequenceMatcher
 from pathlib import Path
 from faster_whisper import WhisperModel
@@ -9,7 +10,10 @@ source = ast.parse(Path("scripts/goose_captions.py").read_text(encoding="utf-8")
 lines = next(ast.literal_eval(n.value) for n in source.body if isinstance(n, ast.Assign) and any(isinstance(t,ast.Name) and t.id=="lines" for t in n.targets))
 reference = [w for _,_,phrase in lines for w in phrase.split()]
 model=WhisperModel("small",device="cpu",compute_type="int8",cpu_threads=4,num_workers=1)
-segments,info=model.transcribe("goose_audio.wav",language="ru",beam_size=5,word_timestamps=True,vad_filter=False,condition_on_previous_text=False, initial_prompt="Кухня. Шеф. Убей гуся. Я же не грузчик. В смысле? Каждый повар должен быть готов убить.")
+with wave.open("goose_audio.wav", "rb") as wf:
+    assert wf.getnchannels() == 1 and wf.getframerate() == 16000 and wf.getsampwidth() == 2
+    audio_samples = np.frombuffer(wf.readframes(wf.getnframes()), dtype="<i2").astype("float32") / 32768
+segments,info=model.transcribe(audio_samples,language="ru",beam_size=5,word_timestamps=True,vad_filter=False,condition_on_previous_text=False, initial_prompt="Кухня. Шеф. Убей гуся. Я же не грузчик. В смысле? Каждый повар должен быть готов убить.")
 segments=list(segments)
 found=[]
 for seg in segments:
