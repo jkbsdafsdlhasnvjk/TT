@@ -65,7 +65,7 @@ def create_ass(words,length,path):
             if a==0:effect="{\\1c&H00D7FF&"+f"\\t({b},{b+1},\\1c&HFFFFFF&)"+"}"
             else:effect="{\\1c&HFFFFFF&"+f"\\t({a},{a+1},\\1c&H00D7FF&)\\t({b},{b+1},\\1c&HFFFFFF&)"+"}"
             part.append(effect+txt)
-        inner=" ".join(part[:split])+(r"\\N"+" ".join(part[split:]) if split<len(part) else "")
+        inner=" ".join(part[:split])+(r"\N"+" ".join(part[split:]) if split<len(part) else "")
         events.append(f"Dialogue: 0,{timestamp(t0)},{timestamp(t1)},Karaoke,,0,0,0,,{{\\an8\\pos(540,1390)}}{inner}")
     path.write_text(HEADER+"\n".join(events)+"\n",encoding="utf-8")
     print("SUBTITLES",len(words),"words",len(rows),"stable phrases",flush=True)
