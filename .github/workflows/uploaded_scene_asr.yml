@@ -16,7 +16,7 @@ jobs:
       - name: Install speech recognition and media transfer
         run: python -m pip install -q faster-whisper==1.2.1 numpy gdown
       - name: Download uploaded 75-second source video
-        run: gdown --fuzzy "https://drive.google.com/file/d/1qCSpjyRuj8vOPM7ouJiio0W5Bw_GjbWl/view" -O scene.mp4
+        run: gdown "https://drive.google.com/uc?id=1qCSpjyRuj8vOPM7ouJiio0W5Bw_GjbWl" -O scene.mp4
       - name: Run two Russian speech transcriptions and inspect word timing
         run: python scripts/transcribe_single_scene.py scene.mp4 scene_asr
       - name: Preserve exact transcript and source metadata
