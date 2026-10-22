@@ -1,0 +1,37 @@
+name: Kinogryz uploaded scene - last 20 seconds audio check
+on:
+  push:
+    paths: [".github/workflows/uploaded_scene_tail_review.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tail:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ffmpeg
+        run: bash scripts/check_ffmpeg.sh
+      - name: Install transcription
+        run: python -m pip install -q faster-whisper==1.2.1 numpy gdown
+      - name: Download source
+        run: gdown "https://drive.google.com/uc?id=1qCSpjyRuj8vOPM7ouJiio0W5Bw_GjbWl" -O scene.mp4
+      - name: Recognize the previously silent last 20s independently
+        run: |
+          ffmpeg -hide_banner -v error -ss 55 -i scene.mp4 -t 20 -vn -ar 16000 -ac 1 -y last20.wav
+          python - <<'PY'
+          import numpy as np
+          import subprocess
+          from faster_whisper import WhisperModel
+          raw=subprocess.check_output(['ffmpeg','-v','error','-i','last20.wav','-ac','1','-ar','16000','-f','s16le','-'])
+          a=np.frombuffer(raw,dtype=np.int16).astype('float32')/32768.
+          for m in ['medium','small']:
+              print('TAIL_MODEL',m,flush=True)
+              model=WhisperModel(m,device='cpu',compute_type='int8',cpu_threads=4)
+              ss,_=model.transcribe(a,language='ru',word_timestamps=True,vad_filter=False,beam_size=5,temperature=0.,condition_on_previous_text=False)
+              for s in ss:
+                  print('TAIL',m,round(s.start+55,2),round(s.end+55,2),s.text,flush=True)
+                  for w in s.words or []:
+                      print('TAIL_WORD',m,round(w.start+55,2),round(w.end+55,2),round(w.probability,2),w.word,flush=True)
+          PY
