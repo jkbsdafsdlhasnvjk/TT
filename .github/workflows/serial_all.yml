@@ -1,0 +1,64 @@
+name: Kinogryz S01 serial ALL footage (natural pauses, no skipped segments)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  global_seams:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check all Python scripts
+        run: python -m py_compile scripts/serial_parts.py scripts/serial_seams.py
+      - name: Prepare FFmpeg
+        run: bash scripts/check_ffmpeg.sh
+      - name: Download full season
+        run: bash scripts/fetch_season.sh
+      - name: Prepare speech alignment
+        run: python -m pip install -q numpy faster-whisper==1.2.1
+      - name: Determine shared natural-speech boundaries across whole season
+        run: python scripts/serial_seams.py season.mp4 serial_seams.json
+      - name: Upload exact shared shard boundaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: kinogryz-s01-serial-exact-shard-seams
+          path: serial_seams.json
+          retention-days: 30
+  all_footage:
+    name: Serial chronological footage part ${{ matrix.part }}
+    needs: global_seams
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        part: [1,2,3,4]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install FFmpeg
+        run: bash scripts/check_ffmpeg.sh
+      - name: Download original first season
+        run: bash scripts/fetch_season.sh
+      - name: Install more accurate Russian speech model
+        run: python -m pip install -q numpy faster-whisper==1.2.1
+      - name: Download same exact boundaries for each job
+        uses: actions/download-artifact@v4
+        with:
+          name: kinogryz-s01-serial-exact-shard-seams
+      - name: Transcribe and render every frame in original chronological order
+        shell: bash
+        run: |
+          read START END < <(python -c 'import json,os; p=int(os.environ["PART"]); d=json.load(open("serial_seams.json"))["parts"][p-1]; print(d["start"],d["end"])')
+          python scripts/serial_parts.py --source season.mp4 --start "$START" --end "$END" --model medium --max-render 0 --crf 17 --out "serial_part_${{ matrix.part }}"
+        env:
+          PART: ${{ matrix.part }}
+      - name: Save full MP4 sequence, subtitles and suspect-word report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kinogryz-s01-serial-contiguous-${{ matrix.part }}
+          path: serial_part_${{ matrix.part }}/
+          if-no-files-found: warn
+          retention-days: 14
