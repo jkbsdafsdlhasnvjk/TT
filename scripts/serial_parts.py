@@ -248,10 +248,11 @@ def issues(words):
             problems.append({"index":i,"time":w["start"],"type":"repeated_word_maybe_music","text":token})
     return problems
 
-def render(source,span,words,folder,index,quality):
-    name=f"Kinogryz_S01_full_{index:04d}.mp4"
+def render(source,span,words,folder,index,quality,prefix):
+    # Unique chronological filenames across four parallel processing shards.
+    name=f"{prefix}_{index:04d}.mp4"
     target=folder/name
-    subtitle=folder/f"Kinogryz_S01_full_{index:04d}.ass"
+    subtitle=folder/f"{prefix}_{index:04d}.ass"
     phrase_count,word_count=captions(words,span,subtitle)
     filtergraph=(
         "[0:v]split=2[bgsrc][fgsrc];"
@@ -287,7 +288,12 @@ def main():
     p.add_argument("--out",default="serial_output")
     p.add_argument("--max-render",type=int,default=3)
     p.add_argument("--crf",type=int,default=17)
+    p.add_argument("--segment-id",type=int,default=0,
+                   help="Chronological processing shard (1..4); prevents name collisions")
     args=p.parse_args()
+    if args.segment_id not in range(5):
+        p.error("--segment-id must be between 0 and 4")
+    prefix=f"Kinogryz_S01_{args.segment_id:02d}"
     output=Path(args.out).resolve()
     output.mkdir(parents=True,exist_ok=True)
     source=str(Path(args.source).resolve())
@@ -312,7 +318,7 @@ def main():
     limit=len(spans) if args.max_render==0 else min(args.max_render,len(spans))
     results=[]
     for i,span in enumerate(spans[:limit],1):
-        record=render(source,span,words,output,i,args.crf)
+        record=render(source,span,words,output,i,args.crf,prefix)
         print("DONE",record["name"],record["words"],record["duration"],flush=True)
         results.append(record)
     (output/"rendered_parts.json").write_text(json.dumps(results,ensure_ascii=False,indent=2),encoding="utf-8")
