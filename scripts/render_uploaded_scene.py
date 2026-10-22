@@ -105,6 +105,7 @@ def main():
     p.add_argument("--segments",default="scene_asr/medium_segments.json")
     p.add_argument("--corrections",default="scripts/scene_uploaded_corrections.json")
     p.add_argument("--output",default="КиноГрызь_сцена_вертикальная_субтитры.mp4")
+    p.add_argument("--mirror-video-only",action="store_true",help="Flip video before adding ASS captions; subtitles stay normal and readable")
     args=p.parse_args()
     source=Path(args.source).resolve()
     report=Path("scene_render")
@@ -138,7 +139,8 @@ def main():
             raise RuntimeError("User-requested censored word still visible")
     # Keep ALL original footage, preserve original frame cadence and audio bitstream.
     # Main frame is NEVER cropped; the extra vertical canvas is a blurred duplicate.
-    graph=("[0:v]split=2[b][fg];"
+    video_input="[0:v]hflip,split=2[b][fg];" if args.mirror_video_only else "[0:v]split=2[b][fg];"
+    graph=(video_input
            "[b]scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1920,boxblur=20:2[bg];"
            "[fg]scale=1080:-2:flags=lanczos,unsharp=3:3:0.18[main];"
            f"[bg][main]overlay=x=(W-w)/2:y=(H-h)/2+65,ass={ass.as_posix()},format=yuv420p[v]")
