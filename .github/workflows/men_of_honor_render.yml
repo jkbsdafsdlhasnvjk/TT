@@ -1,11 +1,10 @@
-name: Men of Honor HD vertical montage and synced captions
+name: Kinogryz Men of Honor HD verified montage
 on:
   push:
     paths:
       - .github/workflows/men_of_honor_render.yml
   workflow_dispatch:
 permissions:
-  actions: read
   contents: write
 jobs:
   render:
@@ -15,57 +14,35 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install FFmpeg
         run: bash scripts/check_ffmpeg.sh
-      - name: Install HD media downloader and Russian speech tools
-        run: python -m pip install -q yt-dlp numpy opencv-python-headless faster-whisper==1.2.1
-      - name: Retrieve verified full-resolution 1080p movie master
+      - name: Install HD media downloader and Russian ASR
+        run: python -m pip install -q yt-dlp numpy faster-whisper==1.2.1
+      - name: Download verified real 1920x1080 original with Russian audio
         run: |
           yt-dlp --no-progress --no-playlist -f hls-5404 --concurrent-fragments 8 --retries 7 --fragment-retries 7 "https://ok.ru/video/7191873522312" -o movie_1080.mp4
           ffprobe -v error -show_entries format=duration,size:stream=width,height,codec_name -of json movie_1080.mp4
-      - name: Pull corrected and validated montage scripts
+      - name: Reconstruct 78 verified film shots exactly in portrait
         run: |
-          git fetch --depth=1 origin main
-          git reset --hard origin/main
-      - name: Check montage scripts and await new robust shot map
-        env:
-          GH_TOKEN: ${{ github.token }}
+          python -m py_compile scripts/men_of_honor_hd_verified.py scripts/men_of_honor_caption_render.py
+          python scripts/men_of_honor_hd_verified.py --movie movie_1080.mp4 --shots scripts/men_of_honor_shots.json --output men_montage_hd.mp4
+      - name: Render 1080x1920 blurred background and timed Russian karaoke captions
         run: |
-          python -m py_compile scripts/men_of_honor_reconstruct.py scripts/men_of_honor_caption_render.py
-          for i in $(seq 1 100); do
-            count=$(gh api repos/jkbsdafsdlhasnvjk/TT/actions/runs/39767451670/artifacts --jq '.artifacts | length' || echo 0)
-            if [ "$count" -gt 0 ]; then
-              echo "Robust scene map ready"
-              exit 0
-            fi
-            sleep 10
-          done
-          exit 1
-      - name: Download matched 78 shot timestamps
-        uses: actions/download-artifact@v4
-        with:
-          name: men-of-honor-78-shot-map-fast
-          run-id: 39767451670
-          github-token: ${{ github.token }}
-          path: men_alignment/
-      - name: Restore the identical 179.584s film montage in HD without advertisement
+          python scripts/men_of_honor_caption_render.py --source men_montage_hd.mp4 --output Voenny_Nyryalshchik_2000_1080p_9x16_Kinogryz.mp4
+      - name: Validate video and audio tracks
         run: |
-          python scripts/men_of_honor_reconstruct.py --movie movie_1080.mp4 --shots scripts/men_of_honor_shots.json --matches men_alignment/men_shots_matched16.json --output men_montage_hd.mp4
-          ffprobe -v error -show_entries format=duration,size:stream=width,height,codec_name -of json men_montage_hd.mp4
-      - name: Transcribe exact Russian speech with timestamps and burn stable captions
-        run: python scripts/men_of_honor_caption_render.py --source men_montage_hd.mp4 --output Voenny_Nyryalshchik_1080p_9x16_Synced_Subtitles.mp4
-      - name: Save final MP4 and subtitle diagnostics
+          ffprobe -v error -show_entries format=duration,size:stream=codec_type,width,height,codec_name -of json Voenny_Nyryalshchik_2000_1080p_9x16_Kinogryz.mp4
+      - name: Archive finished MP4 and QA
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: men-of-honor-1080p-full-captions
+          name: Men-of-Honor-HD-9x16-finished
           path: |
-            Voenny_Nyryalshchik_1080p_9x16_Synced_Subtitles.mp4
+            Voenny_Nyryalshchik_2000_1080p_9x16_Kinogryz.mp4
             men_render/
-            men_alignment/
           if-no-files-found: warn
           retention-days: 30
-      - name: Publish direct MP4 file for downloading
+      - name: Publish direct downloadable MP4
         if: success()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create men-of-honor-9x16-v1 Voenny_Nyryalshchik_1080p_9x16_Synced_Subtitles.mp4 --title "Военный ныряльщик — 1080p монтаж, 9:16" --notes "Сцены из фильма Men of Honor (2000), вертикальная композиция с размытым фоном, без зеркалирования и рекламных плашек, вшитые субтитры с подсветкой каждого слова."
+          gh release create men-of-honor-20261022-9x16-hd Voenny_Nyryalshchik_2000_1080p_9x16_Kinogryz.mp4 --title "КиноГрызь: Военный ныряльщик (2000), HD 9:16" --notes "HD кадры из исходного фильма, 78 восстановленных монтажных переходов, 1080x1920 с размытым фоном без зеркалирования, вшитые русские пословные субтитры." 
