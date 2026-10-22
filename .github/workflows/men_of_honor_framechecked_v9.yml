@@ -1,0 +1,61 @@
+name: Men of Honor corrected 94-cut frame match v9
+on:
+  push:
+    paths:
+      - .github/workflows/men_of_honor_framechecked_v9.yml
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install FFmpeg
+        run: bash scripts/check_ffmpeg.sh
+      - name: Install HD film downloader
+        run: python -m pip install -q yt-dlp
+      - name: Fetch film at approved source quality 1280x720
+        run: yt-dlp --no-progress --no-playlist -f hls-2589 --concurrent-fragments 10 --retries 7 --fragment-retries 7 "https://ok.ru/video/7191873522312" -o movie_720.mp4
+      - name: Rebuild 94 scenes with picture locked to precise original Russian audio
+        run: |
+          python -m py_compile scripts/men_of_honor_picture_94_framechecked_v9.py
+          python scripts/men_of_honor_picture_94_framechecked_v9.py --movie movie_720.mp4 --output corrected_picture_v9_no_black.mp4
+      - name: Retrieve original audio's previously measured word timestamps
+        uses: actions/download-artifact@v4
+        with:
+          name: Men-of-Honor-HD-9x16-finished
+          run-id: 39774396530
+          github-token: ${{ github.token }}
+          path: previous_qa
+      - name: Generate original-Russian-transcript captions with word-level redaction
+        run: |
+          python scripts/men_of_honor_censored_ass_single_star.py
+          grep -F '*' censored_captions.ass | head -3
+      - name: Burn corrected captions without changing audio timing
+        run: |
+          ffmpeg -hide_banner -loglevel error -y \
+            -i corrected_picture_v9_no_black.mp4 -vf "ass=censored_captions.ass,fade=t=out:st=179.10:d=0.07" \
+            -an -c:v libx264 -preset veryfast -crf 17 -r 30 -pix_fmt yuv420p \
+            -movflags +faststart framechecked_v9_no_black_censored_silent.mp4
+          ffprobe -v error -show_entries format=duration,size:stream=codec_type,width,height -of json framechecked_v9_no_black_censored_silent.mp4
+      - name: Upload HD silent original-audio-ready master with source timing diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: men-of-honor-framechecked-v9-720
+          path: |
+            framechecked_v9_no_black_censored_silent.mp4
+            corrected_picture_v9_no_black.mp4
+            censored_captions.ass
+            men_precise_qa/
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Publish user-accessible silent master
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create men-of-honor-94-framechecked-v9 framechecked_v9_no_black_censored_silent.mp4 --title "Men of Honor – image-and-audio-matched 94-shot no-letterbox corrected HD master" --notes "Uses the original 720p source quality and 94 shot positions aligned to matching Russian audio. No black film bands; blurred background full height; word-highlight captions with masked slurs. The original montage audio will be attached unchanged when downloading the master."
