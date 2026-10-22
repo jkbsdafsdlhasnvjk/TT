@@ -36,35 +36,38 @@ for i,(lo,hi) in enumerate(group_ranges):
 
 model, meta = whisperx.load_align_model(language_code="ru", device="cpu")
 result = whisperx.align(blocks, model, meta, audio, "cpu")
-timings = []
+# WhisperX may split supplied blocks into sentence segments. The returned
+# segment count is NOT guaranteed to equal the input block count.
+# Its WORD sequence is what must be preserved and regrouped by source text.
+print("ALIGN_INPUT_BLOCKS",len(blocks),"ALIGN_OUTPUT_SEGMENTS",len(result["segments"]))
+raw_words = [w for seg in result["segments"] for w in seg.get("words",[])]
+tokens = [token for _,_,sentence in lines for token in sentence.split()]
 problems = []
-for gi,((lo,hi),block,aligned) in enumerate(zip(group_ranges,blocks,result["segments"])):
-    raw_words = aligned.get("words", [])
-    tokens = [token for _,_,sentence in lines[lo:hi] for token in sentence.split()]
-    if len(raw_words) != len(tokens):
-        problems.append(f"group {gi}: expected {len(tokens)} words, got {len(raw_words)}")
-        continue
-    events = []
-    for token,entry in zip(tokens,raw_words):
-        if "start" not in entry or "end" not in entry or entry["end"] <= entry["start"]:
-            problems.append(f"group {gi}: unaligned {token}: {entry}")
-            continue
-        events.append([float(entry["start"]),float(entry["end"])])
-    expected = [len(lines[i][2].split()) for i in range(lo,hi)]
-    idx = 0
-    for count in expected:
-        timings.append(events[idx:idx+count])
-        idx += count
-    if events:
-        print(f"GROUP {gi}: sound=[{blocks[gi]['start']:.2f},{blocks[gi]['end']:.2f}] first={events[0][0]:.3f} last={events[-1][1]:.3f} words={len(events)}")
+if len(raw_words) != len(tokens):
+    problems.append(f"expected {len(tokens)} aligned words, got {len(raw_words)}")
 
-if len(timings) != len(lines):
-    problems.append(f"Incorrect phrase count: {len(timings)} != {len(lines)}")
+word_events = []
+for i,entry in enumerate(raw_words):
+    if "start" not in entry or "end" not in entry or entry["end"] <= entry["start"]:
+        problems.append(f"unaligned word index {i}: {entry}")
+        continue
+    word_events.append([float(entry["start"]),float(entry["end"])])
+
+timings = []
+cursor = 0
+for a,b,phrase in lines:
+    count=len(phrase.split())
+    timings.append(word_events[cursor:cursor+count])
+    cursor+=count
+if cursor != len(word_events):
+    problems.append(f"word partition length mismatch: {cursor} != {len(word_events)}")
 for i,row in enumerate(timings):
-    if not row: problems.append(f"empty phrase {i}"); continue
+    if not row:
+        problems.append(f"empty phrase {i}")
+        continue
     for j,(a,b) in enumerate(row):
         if not 0 <= a < b <= duration: problems.append(f"bad word {i}:{j} [{a},{b}]")
-    if i and row[0][0] < timings[i-1][-1][1] - .02:
+    if i and timings[i-1] and row[0][0] < timings[i-1][-1][1] - .02:
         problems.append(f"overlapping words {i-1} and {i}")
 if problems:
     raise RuntimeError("Refusing to export faulty timing:\n" + "\n".join(problems))
