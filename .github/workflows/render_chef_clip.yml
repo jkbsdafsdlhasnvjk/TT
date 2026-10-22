@@ -1,0 +1,41 @@
+name: Kinogryz chef compliment clean captions non mirrored 33s
+on:
+  push:
+    paths: [".github/workflows/render_chef_clip.yml"]
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+jobs:
+  chef:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate revised on-video subtitle compositor
+        run: python -m py_compile scripts/render_chef_clip.py scripts/render_uploaded_scene.py
+      - name: FFmpeg with libass
+        run: bash scripts/check_ffmpeg.sh
+      - name: Download saved source scene and captions transcript
+        uses: actions/download-artifact@v4
+        with:
+          name: kinogryz-s01-part-1
+          run-id: 39727987611
+          github-token: ${{ github.token }}
+          path: source_candidates
+      - name: Correct transcript, remove old subtitles, cut after chef dialogue
+        run: python scripts/render_chef_clip.py
+      - name: Publish proof and MP4
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kinogryz-chef-compliment-33sec-corrected-unmirrored
+          path: chef_final/
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Publish direct MP4 download link
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create kinogryz-chef-compliment-33s-corrected chef_final/Kinogryz_Chef_Kompliment_33s_corrected_not_mirrored.mp4 --title "КиноГрызь — шеф и комплимент (33 сек), исправленные субтитры, без зеркалирования" --notes "Без водяного знака, вертикальное 1080×1920, исходный видеоряд НЕ отражен, старые ошибочные субтитры убраны, исправленные пословные субтитры вшиты; «Педя» оставлено по просьбе пользователя; обрезано сразу после реплики про комплимент."
