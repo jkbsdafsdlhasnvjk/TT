@@ -1,4 +1,4 @@
-name: Kinogryz serial season pilot - full contiguous footage
+name: Kinogryz serial season pilot - approx one-minute parts
 on:
   push:
     paths: [".github/workflows/serial_pilot.yml"]
@@ -19,13 +19,13 @@ jobs:
         run: bash scripts/fetch_season.sh
       - name: Install Russian speech recognition
         run: python -m pip install -q numpy faster-whisper==1.2.1
-      - name: Transcribe first 6.5 minutes and preserve all continuous footage
-        run: python scripts/serial_parts.py --source season.mp4 --start 0 --end 390 --model medium --out serial_pilot --max-render 4 --crf 17
+      - name: Transcribe first 6.5 minutes and cut near 60s at natural speech pauses
+        run: python scripts/serial_parts.py --source season.mp4 --start 0 --end 390 --model medium --out serial_pilot --max-render 8 --crf 17
       - name: Save continuous cut plan and sample MP4 parts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: kinogryz-serial-full-coverage-pilot
+          name: kinogryz-serial-one-minute-pilot
           path: serial_pilot/
           if-no-files-found: warn
           retention-days: 14
