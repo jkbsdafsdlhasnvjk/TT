@@ -18,7 +18,7 @@ jobs:
           ln -s "$(python -c 'import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())')" "$RUNNER_TEMP/ffbin/ffmpeg"
           echo "$RUNNER_TEMP/ffbin" >> "$GITHUB_PATH"
       - name: Download smaller 360p source
-        run: yt-dlp --no-progress -f hls-757 --concurrent-fragments 8 --retries 7 --fragment-retries 7 "https://ok.ru/video/7191873522312" -o film_360.mp4
+        run: yt-dlp --fixup never --no-progress -f hls-757 --concurrent-fragments 8 --retries 7 --fragment-retries 7 "https://ok.ru/video/7191873522312" -o film_360.mp4
       - name: Match all 78 scene fingerprints
         run: python scripts/men_of_honor_match16.py film_360.mp4
       - name: Save exact mapping
