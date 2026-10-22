@@ -140,7 +140,7 @@ def main():
     # Keep ALL original footage, preserve original frame cadence and audio bitstream.
     # Main frame is NEVER cropped; the extra vertical canvas is a blurred duplicate.
     video_input="[0:v]hflip,split=2[b][fg];" if args.mirror_video_only else "[0:v]split=2[b][fg];"
-    graph=(video_input
+    graph=(video_input+
            "[b]scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1920,boxblur=20:2[bg];"
            "[fg]scale=1080:-2:flags=lanczos,unsharp=3:3:0.18[main];"
            f"[bg][main]overlay=x=(W-w)/2:y=(H-h)/2+65,ass={ass.as_posix()},format=yuv420p[v]")
