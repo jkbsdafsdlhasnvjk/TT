@@ -28,22 +28,28 @@ def main():
  positions=list(csv.DictReader(open("scripts/men_of_honor_87_map.csv",encoding="utf-8")))
  assert len(edits)==len(positions)==87,(len(edits),len(positions))
  info=probe(opts.movie)
- assert next(x for x in info["streams"] if x["codec_type"]=="video")["width"]==1920
+ vsrc=next(x for x in info["streams"] if x["codec_type"]=="video")
+ assert vsrc["width"] in (1280,1920)
+ factor=vsrc["width"]/640
+ crop_width=round(260*factor)
+ crop_height=round(323*factor)
+ crop_y=round(30*factor)
+ maxcrop=vsrc["width"]-crop_width
  assert float(info["format"]["duration"])>7700
  folder=Path("men_precise_segments");folder.mkdir(exist_ok=True)
  frames_total=0;log=[]
  for idx,((a,b,i),setting) in enumerate(zip(edits,positions)):
   source_start=float(setting["source_start"])
-  x0=int(setting["x_start_640"])*3
-  x1=int(setting["x_end_640"])*3
-  assert 0<=x0<=1140 and 0<=x1<=1140
+  x0=round(int(setting["x_start_640"])*factor)
+  x1=round(int(setting["x_end_640"])*factor)
+  assert 0<=x0<=maxcrop and 0<=x1<=maxcrop
   frames=round(b*30)-round(a*30)
   assert 2<=frames<=350, (idx,frames)
   duration=frames/30
   den=max(1,frames-1)
   dx=x1-x0
   # Exact center crop from reference. Pan independently inside each shot.
-  crop=f"crop=780:969:{x0}+({dx})*n/{den}:90,scale=1080:1350:flags=lanczos,setsar=1,fps=30"
+  crop=f"crop={crop_width}:{crop_height}:{x0}+({dx})*n/{den}:{crop_y},scale=1080:1350:flags=lanczos,setsar=1,fps=30"
   out=folder/f"{idx:03}.mp4"
   print("SHOT",idx,"original",i,"ref",a,b,"source",source_start,"x",x0,x1,"frames",frames,flush=True)
   run(["ffmpeg","-hide_banner","-loglevel","error","-y","-ss",f"{source_start:.3f}",
