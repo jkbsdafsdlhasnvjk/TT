@@ -1,0 +1,34 @@
+name: Kinogryz uploaded clip - review each recognized word
+on:
+  push:
+    paths: [".github/workflows/uploaded_scene_review.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: kinogryz-uploaded-scene-word-inspection
+          run-id: 39759250163
+          github-token: ${{ github.token }}
+          path: inspect
+      - name: Print full word alignment with two-model consensus
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          for model in ["medium","small"]:
+              ss=json.loads(Path(f"inspect/{model}_segments.json").read_text(encoding="utf-8"))
+              print("MODEL",model)
+              n=0
+              for seg in ss:
+                  print("SEG",seg["start"],seg["end"],seg["text"])
+                  for w in seg["words"]:
+                      print(f"WORD {n:03d} {w['start']:6.2f} {w['end']:6.2f} prob={w['prob']:.3f} {w['word']}")
+                      n+=1
+          PY
