@@ -1,0 +1,44 @@
+name: Split 360p film for accurate frame matching
+on:
+  push:
+    paths: [.github/workflows/men_of_honor_split.yml]
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+jobs:
+  split:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Retrieve already downloaded movie
+        uses: actions/download-artifact@v4
+        with:
+          name: men-of-honor-360p-full-movie-internal
+          run-id: 39770389806
+          github-token: ${{ github.token }}
+          path: movie
+      - name: Split into transferable 310MB parts
+        run: |
+          ls -lah movie
+          split -b 310000000 -d -a 2 movie/movie_360.ts movie_part_
+          ls -lah movie_part_*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: men-of-honor-film-part-00
+          path: movie_part_00
+          compression-level: 0
+          retention-days: 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: men-of-honor-film-part-01
+          path: movie_part_01
+          compression-level: 0
+          retention-days: 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: men-of-honor-film-part-02
+          path: movie_part_02
+          compression-level: 0
+          retention-days: 1
