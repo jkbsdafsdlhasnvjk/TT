@@ -15,15 +15,13 @@ jobs:
         run: bash scripts/check_ffmpeg.sh
       - name: Download full season
         run: bash scripts/fetch_season.sh
-      - name: Install Russian forced-alignment dependencies
-        run: python -m pip install --upgrade pip && python -m pip install whisperx
       - name: Render goose scene with readable highlighted subtitles
         run: bash scripts/render_goose.sh
       - name: Save alignment diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: kinogryz-alignment-debug-v7
+          name: kinogryz-alignment-debug-v8
           path: |
             goose_word_times.json
             captions.ass
@@ -33,6 +31,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: kinogryz-goose-audio-led-v7
+          name: kinogryz-goose-early-highlights-v8
           path: "КиноГрызь_Гусь_версия_GitHub.mp4"
           retention-days: 7
