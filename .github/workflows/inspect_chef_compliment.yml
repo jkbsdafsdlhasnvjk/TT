@@ -1,0 +1,43 @@
+name: Inspect chef compliment source scene
+on:
+  push:
+    paths: [".github/workflows/inspect_chef_compliment.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch previous version of matching source clip and its original transcript
+        uses: actions/download-artifact@v4
+        with:
+          name: kinogryz-s01-part-1
+          run-id: 39727987611
+          github-token: ${{ github.token }}
+          path: source_candidates
+      - name: Print source scene metadata and scene dialogue
+        run: |
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          root=Path("source_candidates")
+          for f in sorted(root.rglob("*")):
+              if f.is_file() and (f.name.startswith("Kinogryz_S01_01h03m_05") or f.name in ("render_results.json","season_plan.json")):
+                  print("FOUND",f.as_posix(),f.stat().st_size,flush=True)
+          results=json.loads(next(root.rglob("render_results.json")).read_text())
+          clip=next((x for x in results if x["file"]=="Kinogryz_S01_01h03m_05.mp4"),None)
+          print("CLIP_META",json.dumps(clip,ensure_ascii=False),flush=True)
+          segs=json.loads(next(root.rglob("transcript.json")).read_text())
+          if clip:
+              a,b=clip["start"],clip["end"]
+              for s in segs:
+                  if s["end"]>=a-3 and s["start"]<=b+10:
+                      print(f'TRANSCRIPT {s["start"]:.2f}-{s["end"]:.2f} '+s["text"],flush=True)
+                      print("WORDS",json.dumps(s["words"],ensure_ascii=False),flush=True)
+          ass=next(root.rglob("Kinogryz_S01_01h03m_05.ass"),None)
+          if ass:print("ASS_END", "\\n".join(ass.read_text().splitlines()[-35:]),flush=True)
+          PY
