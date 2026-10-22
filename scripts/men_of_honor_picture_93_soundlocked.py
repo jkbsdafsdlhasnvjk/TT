@@ -78,7 +78,7 @@ def main():
               "x_start":x0,"x_end":x1,"frames":frames})
  playlist=folder/"concat.txt"
  playlist.write_text("".join(f"file '{j:03}.mp4'\nduration {(round(b*30)-round(a*30))/30:.9f}\n"
-                             for j,(a,b,i) in enumerate(edits)),encoding="utf-8")
+                             for j,(a,b,i,setting,parent) in enumerate(full)),encoding="utf-8")
  center=Path("men_precise_center.mp4")
  run(["ffmpeg","-hide_banner","-loglevel","error","-y","-f","concat","-safe","0","-i",playlist,
       "-map","0:v:0","-an","-t",f"{frames_total/30:.6f}","-c:v","copy",
