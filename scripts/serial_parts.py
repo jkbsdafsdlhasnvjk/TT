@@ -59,12 +59,20 @@ def words_from_audio(model,source,lo,hi):
             no_speech_threshold=.65,compression_ratio_threshold=1.8)
         used=0
         for seg in segments:
+            speech_text=(seg.text or "").lower().replace("ё","е")
+            # Whisper can hallucinate credit titles and audio-description
+            # labels over instrumentals. These aren't spoken dialogue.
+            if any(x in speech_text for x in ("редактор субтитров","динамичная музыка","субтитры подготовил","переводчик")):
+                print("ASR_FILTER_NON_SPEECH",round(left+seg.start,2),speech_text[:140],flush=True)
+                continue
             for word in seg.words or ():
                 if word.start is None or word.end is None or word.end<=word.start or not word.word.strip():
                     continue
                 a=left+float(word.start);b=left+float(word.end)
                 if not now<=.5*(a+b)<stop:continue
                 if not lo<=a<=b<=hi+.07:continue
+                if not re.search(r"[а-яёА-ЯЁ0-9]",word.word):
+                    continue  # punctuation-only ASR tokens are not spoken words
                 all_words.append({"start":round(a,3),"end":round(b,3),
                     "text":word.word.strip(),"confidence":round(float(word.probability or 0.),3)})
                 used+=1
