@@ -1,4 +1,4 @@
-name: Men of Honor 78-shot match (standalone ffmpeg)
+name: Men of Honor 78-shot match with system FFmpeg
 on:
   push:
     paths: [".github/workflows/men_of_honor_match_fast.yml"]
@@ -8,31 +8,27 @@ permissions:
 jobs:
   match:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 48
     steps:
       - uses: actions/checkout@v4
-      - name: Install no-apt video matcher
+      - name: Install system FFmpeg and matching tools
         run: |
-          python -m pip install -q yt-dlp numpy opencv-python-headless imageio-ffmpeg
-          mkdir -p "$RUNNER_TEMP/ffbin"
-          ln -s "$(python -c 'import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())')" "$RUNNER_TEMP/ffbin/ffmpeg"
-          echo "$RUNNER_TEMP/ffbin" >> "$GITHUB_PATH"
-      - name: Download smaller 360p source
-        run: yt-dlp --fixup never --no-progress -f hls-757 --concurrent-fragments 8 --retries 7 --fragment-retries 7 "https://ok.ru/video/7191873522312" -o film_360.mp4
-      - name: Inspect and repair downloaded MPEG-TS container
+          sudo apt-get install -y -qq ffmpeg
+          ffmpeg -version | head -1
+          ffprobe -version | head -1
+          python -m pip install -q yt-dlp numpy opencv-python-headless
+      - name: Download and normalize film frames
         run: |
+          yt-dlp --no-progress -f hls-757 --concurrent-fragments 8 --retries 7 --fragment-retries 7 "https://ok.ru/video/7191873522312" -o film_360.mp4
           file film_360.mp4
-          ffmpeg -hide_banner -i film_360.mp4 -t 2 -f null - || true
-          ffmpeg -y -hide_banner -i film_360.mp4 -c copy film_360_fixed.mkv
-          ls -lah film_360.mp4 film_360_fixed.mkv
-          ffmpeg -hide_banner -i film_360_fixed.mkv -t 2 -f null -
-      - name: Match all 78 scene fingerprints
-        run: python scripts/men_of_honor_match16.py film_360_fixed.mkv
-      - name: Save exact mapping
+          ffprobe -v error -show_entries format=duration,size:stream=codec_type,width,height -of json film_360.mp4
+      - name: Visually match 78 shot fingerprints
+        run: python scripts/men_of_honor_match16.py film_360.mp4
+      - name: Save map and quality metrics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: men-of-honor-78-shot-map-fast
+          name: men-of-honor-78-shot-map-system
           path: men_shots_matched16.json
           if-no-files-found: warn
           retention-days: 30
