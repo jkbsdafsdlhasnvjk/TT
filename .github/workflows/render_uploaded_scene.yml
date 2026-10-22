@@ -1,4 +1,4 @@
-name: Kinogryz user scene 75s - final vertical word subtitles no watermark
+name: Kinogryz uploaded 75s all spoken words - final v2
 on:
   push:
     paths: [".github/workflows/render_uploaded_scene.yml"]
@@ -33,7 +33,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: kinogryz-Kuhnya-uploaded-vertical-captions-75s
+          name: kinogryz-Kuhnya-uploaded-vertical-captions-75s-v2
           path: |
             Kinogryz_Kuhnya_uploaded_75s_wordkaraoke.mp4
             scene_render/
@@ -44,4 +44,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create kinogryz-kuhnya-75s-captions-v1 Kinogryz_Kuhnya_uploaded_75s_wordkaraoke.mp4 --title "КиноГрызь — Кухня, вертикальная сцена (75 сек, субтитры)" --notes "1080x1920, без водяных знаков, полный исходный фрагмент без обрезки, сохранена исходная AAC-дорожка, вшита подсветка слов, «Шалава» заменено на ******."
+          gh release create kinogryz-kuhnya-75s-captions-v2 Kinogryz_Kuhnya_uploaded_75s_wordkaraoke.mp4 --title "КиноГрызь — Кухня, вертикальная сцена (75 сек, субтитры)" --notes "1080x1920, без водяных знаков, полный исходный фрагмент без обрезки, сохранена исходная AAC-дорожка, вшита подсветка слов, «Шалава» заменено на ******."
