@@ -1,0 +1,31 @@
+name: Kinogryz serial season pilot - full contiguous footage
+on:
+  push:
+    paths: [".github/workflows/serial_pilot.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  serial_pilot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check parsing of the new sequential subtitle editor
+        run: python -m py_compile scripts/serial_parts.py
+      - name: Install FFmpeg
+        run: bash scripts/check_ffmpeg.sh
+      - name: Download season source
+        run: bash scripts/fetch_season.sh
+      - name: Install Russian speech recognition
+        run: python -m pip install -q numpy faster-whisper==1.2.1
+      - name: Transcribe first 6.5 minutes and preserve all continuous footage
+        run: python scripts/serial_parts.py --source season.mp4 --start 0 --end 390 --model medium --out serial_pilot --max-render 4 --crf 17
+      - name: Save continuous cut plan and sample MP4 parts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kinogryz-serial-full-coverage-pilot
+          path: serial_pilot/
+          if-no-files-found: warn
+          retention-days: 14
