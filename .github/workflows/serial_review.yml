@@ -1,0 +1,37 @@
+name: Kinogryz sequential Russian subtitle review
+on:
+  push:
+    paths: [".github/workflows/serial_review.yml"]
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: kinogryz-serial-full-coverage-pilot
+          run-id: 39746212868
+          github-token: ${{ github.token }}
+      - name: Review every questionable word and surrounding audio transcription
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          ws=json.loads(Path("word_timestamps.json").read_text())
+          issues=json.loads(Path("transcript_review.json").read_text())
+          plan=json.loads(Path("continuous_cut_plan.json").read_text())
+          rendered=json.loads(Path("rendered_parts.json").read_text())
+          print("COVERAGE",plan["range"],"CUTS",[(x["start"],x["end"]) for x in plan["parts"]])
+          print("RENDERED",json.dumps(rendered,ensure_ascii=False))
+          print("SUSPECT_TOTAL",len(issues),"WORDS",len(ws))
+          for x in issues:
+              i=x["index"]; context=" ".join(w["text"] for w in ws[max(0,i-5):min(len(ws),i+6)])
+              print("REVIEW",round(x["time"],2),x["type"],"word=",x["text"],"context=",context)
+          for p in plan["parts"]:
+              words=[w["text"] for w in ws if p["start"]<=w["start"] and w["end"]<=p["end"]]
+              print("PART_DIALOGUE",p["start"],p["end"]," ".join(words)[:2200])
+          PY
