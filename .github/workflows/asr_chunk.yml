@@ -1,0 +1,28 @@
+name: Goose chunked word recognition diagnostics
+on:
+  push:
+    paths: [".github/workflows/asr_chunk.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  word_review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install FFmpeg
+        run: bash scripts/check_ffmpeg.sh
+      - name: Download source
+        run: bash scripts/fetch_season.sh
+      - name: Extract exact scene audio
+        run: ffmpeg -hide_banner -loglevel error -y -ss 3095.4 -i season.mp4 -t 58.60 -vn -ac 1 -ar 16000 goose_audio.wav
+      - name: Identify actual word onsets in short audio intervals
+        run: python -m pip install -q faster-whisper==1.2.1 && python scripts/asr_chunk_review.py
+      - name: Save measured word-level timings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: goose-short-audio-words
+          path: asr_chunk_review.json
+          retention-days: 7
