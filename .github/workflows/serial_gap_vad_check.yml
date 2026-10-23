@@ -1,0 +1,58 @@
+name: Kinogryz S01 repaired silent gap independent VAD boundary audit
+on:
+  push:
+    paths: [".github/workflows/serial_gap_vad_check.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lightweight independent voice activity detector
+        run: |
+          bash scripts/check_ffmpeg.sh
+          python -m pip install -q webrtcvad-wheels numpy
+      - name: Restore already cached original, no Google Drive download
+        uses: actions/cache/restore@v4
+        with:
+          path: season.mp4
+          key: kinogryz-s01-source-102EHQNQ-kDPZ18lKEgr5pWPDDoQnLe3T-v1
+          fail-on-cache-miss: true
+      - name: Evaluate 183s gap and repaired cuts at 16540s and 16612s
+        run: |
+          python - <<'PY'
+          import json,subprocess
+          import numpy as np
+          import webrtcvad
+          lo=16480.;hi=16663.13;rate=16000
+          raw=subprocess.check_output(["ffmpeg","-v","error","-ss",str(lo),"-i","season.mp4","-t",str(hi-lo),"-vn","-ac","1","-ar",str(rate),"-f","s16le","-"])
+          pcm=np.frombuffer(raw,dtype="<i2")
+          samples_per_frame=int(.03*rate)
+          pcm=pcm[:len(pcm)//samples_per_frame*samples_per_frame]
+          rms=np.sqrt(np.mean(pcm.astype(np.float64).reshape(-1,samples_per_frame)**2,axis=1))/32768
+          results={}
+          for aggressiveness in (2,3):
+              vad=webrtcvad.Vad(aggressiveness)
+              flags=np.array([vad.is_speech(pcm[i:i+samples_per_frame].tobytes(),rate) for i in range(0,len(pcm),samples_per_frame)])
+              results[str(aggressiveness)]={"gap_vad_fraction":round(float(flags.mean()),4)}
+              for t in (16540.,16612.):
+                  near={}
+                  for radius in (.45,1.5,3.):
+                      idx=np.arange(len(flags))
+                      sel=np.abs(lo+(idx+.5)*.03-t)<radius
+                      near[str(radius)]={"vad_fraction":round(float(flags[sel].mean()),4),"rms":round(float(np.sqrt(np.mean(rms[sel]**2))),4)}
+                  results[str(aggressiveness)][str(t)]=near
+          report={"source_range":[lo,hi],"repaired_cut_times":[16540.,16612.],"detector":"WebRTC VAD","results":results,"speech_verified":False,"note":"WebRTC VAD is not a human listener. It may misclassify music, sound effects and speech."}
+          print("GAP_VAD_REPORT",json.dumps(report,ensure_ascii=False),flush=True)
+          open("gap_vad_report.json","w").write(json.dumps(report,ensure_ascii=False,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kinogryz-s01-gap-vad-boundary-check
+          path: gap_vad_report.json
+          if-no-files-found: warn
+          retention-days: 30
