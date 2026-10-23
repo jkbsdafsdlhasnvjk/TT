@@ -1,0 +1,59 @@
+name: Kinogryz S01 cut boundary and duration risk audit
+on:
+  push:
+    paths: [".github/workflows/serial_boundary_audit.yml"]
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [1,2]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download completed short videos and manifest from Actions
+        uses: actions/download-artifact@v4
+        with:
+          name: kinogryz-s01-serial-one-minute-${{ matrix.part }}
+          run-id: 39904598345
+          github-token: ${{ github.token }}
+          path: clipset
+      - name: Inspect exact cut risk and subtitle consistency
+        run: |
+          python - <<'PY'
+          import json,collections
+          from pathlib import Path
+          d=Path("clipset")
+          plan=json.loads((d/"continuous_cut_plan.json").read_text())
+          words=json.loads((d/"word_timestamps.json").read_text())
+          parts=plan["parts"]
+          qa=json.loads((d/"structural_qa.json").read_text())
+          bad=[(round(p["end"]-p["start"],2),p["reason"],p["start"]) for p in parts if not 45<=p["end"]-p["start"]<=76]
+          fallbacks=[p for p in parts if "REVIEW" in p["reason"]]
+          risks=[]
+          for p in parts[:-1]:
+              t=p["end"]
+              before=[w for w in words if w["end"]<=t]
+              after=[w for w in words if w["start"]>=t]
+              if not before or not after:continue
+              w=before[-1];n=after[0]
+              gap=round(n["start"]-w["end"],3)
+              punctuation=w["text"].endswith((".","!","?","…"))
+              if gap<.4 or (not punctuation and gap<.8):
+                  risks.append({"cut":t,"gap":gap,"last_word":w["text"],"next_word":n["text"],"reason":p["reason"],"punctuation":punctuation})
+          summary={"part_range":plan["range"],"total_clips":len(parts),"out_of_45_76":bad,"fallbacks":fallbacks,
+              "cuts_needing_dialogue_review":risks,"speech_qa":qa["speech_qa"],
+              "review_items":qa["review_items"],"words":len(words)}
+          Path("boundary_risk.json").write_text(json.dumps(summary,ensure_ascii=False,indent=2))
+          print("BOUNDARY_AUDIT",json.dumps({**summary,"cuts_needing_dialogue_review":risks[:30]},ensure_ascii=False),flush=True)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kinogryz-s01-boundary-risk-${{ matrix.part }}
+          path: boundary_risk.json
+          retention-days: 30
