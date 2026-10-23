@@ -1,0 +1,39 @@
+name: Kinogryz S01 independent AV and suspect subtitle audit
+on:
+  push:
+    paths: [".github/workflows/serial_independent_qa.yml"]
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [1,2]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install FFmpeg and independent speech model
+        run: |
+          bash scripts/check_ffmpeg.sh
+          python -m pip install -q numpy faster-whisper==1.2.1
+      - name: Retrieve completed MP4s from GitHub artifact, not Google Drive
+        uses: actions/download-artifact@v4
+        with:
+          name: kinogryz-s01-serial-one-minute-${{ matrix.part }}
+          run-id: 39904598345
+          github-token: ${{ github.token }}
+          path: completed_part
+      - name: Verify every AV stream and independently transcribe highest-risk Russian words
+        run: python scripts/serial_independent_qa.py completed_part --count 40 --model large-v3-turbo
+      - name: Preserve small diagnostic report for targeted fixes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kinogryz-s01-independent-audit-${{ matrix.part }}
+          path: qa_crosscheck_*.json
+          if-no-files-found: warn
+          retention-days: 30
