@@ -1,0 +1,50 @@
+name: Kinogryz S01 repair five duration outliers from cached source
+on:
+  push:
+    paths: [".github/workflows/serial_repair_outliers.yml"]
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [3,4]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate repair script and install dependencies
+        run: |
+          python -m py_compile scripts/serial_outlier_fix.py
+          bash scripts/check_ffmpeg.sh
+          python -m pip install -q numpy faster-whisper==1.2.1
+      - name: Retrieve complete previously generated MP4s and word timestamps
+        uses: actions/download-artifact@v4
+        with:
+          name: kinogryz-s01-serial-one-minute-${{ matrix.part }}
+          run-id: 39904598345
+          github-token: ${{ github.token }}
+          path: original_shard
+      - name: Plan safe edits, refusing to cut through ASR words
+        run: python scripts/serial_outlier_fix.py --input original_shard --output plan_preview --part ${{ matrix.part }} --plan-only
+      - name: Restore original video from Actions cache (no Drive downloads)
+        uses: actions/cache/restore@v4
+        with:
+          path: season.mp4
+          key: kinogryz-s01-source-102EHQNQ-kDPZ18lKEgr5pWPDDoQnLe3T-v1
+          fail-on-cache-miss: true
+      - name: Repair affected short MP4s and run strict QA
+        run: python scripts/serial_outlier_fix.py --input original_shard --output repaired_shard --part ${{ matrix.part }} --source season.mp4
+      - name: Upload corrected chronological MP4 set and QA
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kinogryz-s01-serial-repaired-one-minute-${{ matrix.part }}
+          path: |
+            repaired_shard/
+            plan_preview/repair_diagnostic.json
+          if-no-files-found: warn
+          retention-days: 30
