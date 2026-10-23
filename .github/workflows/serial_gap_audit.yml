@@ -1,0 +1,56 @@
+name: Kinogryz S01 independent ASR audit of 183s missing-word interval
+on:
+  push:
+    paths: [".github/workflows/serial_gap_audit.yml"]
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install FFmpeg and independent Whisper
+        run: |
+          bash scripts/check_ffmpeg.sh
+          python -m pip install -q numpy faster-whisper==1.2.1
+      - name: Restore cached original (no Drive)
+        uses: actions/cache/restore@v4
+        with:
+          path: season.mp4
+          key: kinogryz-s01-source-102EHQNQ-kDPZ18lKEgr5pWPDDoQnLe3T-v1
+          fail-on-cache-miss: true
+      - name: Check 183s gap with separate model and soundtrack levels
+        run: |
+          python - <<'PY'
+          import subprocess,json
+          import numpy as np
+          from faster_whisper import WhisperModel
+          lo=16480.0;hi=16663.13
+          raw=subprocess.run(["ffmpeg","-v","error","-ss",str(lo),"-i","season.mp4","-t",str(hi-lo),"-vn","-ac","1","-ar","16000","-f","s16le","-"],capture_output=True,check=True).stdout
+          audio=np.frombuffer(raw,dtype="<i2").astype("float32")/32768
+          print("AUDIO_STATS",len(audio)/16000,"RMS",float(np.sqrt(np.mean(audio**2))),"PEAK",float(np.max(np.abs(audio))),flush=True)
+          model=WhisperModel("large-v3-turbo",device="cpu",compute_type="int8",cpu_threads=4)
+          segments,info=model.transcribe(audio,language="ru",beam_size=5,temperature=0,
+               condition_on_previous_text=False,word_timestamps=True,
+               vad_filter=True,vad_parameters={"min_silence_duration_ms":320},
+               no_speech_threshold=.65,compression_ratio_threshold=1.8)
+          report=[]
+          for s in segments:
+              row={"start":round(lo+s.start,2),"end":round(lo+s.end,2),
+                "text":s.text,"no_speech_prob":round(s.no_speech_prob,3),
+                "avg_logprob":round(s.avg_logprob,3)}
+              report.append(row)
+              print("INDEPENDENT_ASR",json.dumps(row,ensure_ascii=False),flush=True)
+          print("GAP_AUDIT_TOTAL",len(report),"segments",flush=True)
+          open("gap_183sec_audit.json","w").write(json.dumps({"range":[lo,hi],"model":"large-v3-turbo","segments":report,"note":"ASR is not human listening verification"},ensure_ascii=False,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kinogryz-s01-gap-183sec-independent-asr
+          path: gap_183sec_audit.json
+          if-no-files-found: warn
+          retention-days: 30
