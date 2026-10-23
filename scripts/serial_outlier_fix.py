@@ -13,9 +13,29 @@ def local_plan(words,spans,left,right):
     lo=spans[left]["start"];hi=spans[right]["end"]
     relevant=[w for w in words if lo-.1<=w["start"] and w["end"]<=hi+.1]
     orig=[spans[i]["end"] for i in range(left,right)]
+    # The original ASR has a 183-second stretch without any recognized
+    # speech in shard 3. possible_cuts() supplies only ONE midpoint for
+    # that gap, which mathematically makes 45-76s clips impossible.
+    # Supply additional boundaries entirely INSIDE word-free regions.
+    # These are structurally safe relative to ASR, but NOT proof that
+    # there is no missed dialogue; flag them for separate audio review.
+    no_asr_gap_cuts=[]
+    edges=([(lo,relevant[0]["start"])] +
+           [(a["end"],b["start"]) for a,b in zip(relevant,relevant[1:])] +
+           [(relevant[-1]["end"],hi)]) if relevant else [(lo,hi)]
+    for a,b in edges:
+        if b-a<85.:continue
+        t=a+12.
+        while t<b-12.:
+            no_asr_gap_cuts.append((round(t,2),2.1,
+                "no_ASR_words_gap_audio_review_required",round(b-a,2)))
+            t+=12.
+    if no_asr_gap_cuts:
+        print("NO_ASR_WORD_GAP_EXTRA_CUTS",len(no_asr_gap_cuts),
+              no_asr_gap_cuts[:5],flush=True)
     def try_solve(allow_weak):
         options=[]
-        for t,score,reason,gap in possible_cuts(relevant,[],lo,hi):
+        for t,score,reason,gap in [*possible_cuts(relevant,[],lo,hi),*no_asr_gap_cuts]:
             if not allow_weak and not (gap>=.40 or score>=2.05):continue
             if any(w["start"]-.10<t<w["end"]+.10 for w in relevant):continue
             options.append((round(t,2),float(score),gap,reason))
