@@ -1,0 +1,40 @@
+name: Kinogryz S01 part3 ASR seam diagnostics
+on:
+  push:
+    paths: [".github/workflows/serial_part3_diagnose.yml"]
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch part3 prior result only (no Drive)
+        uses: actions/download-artifact@v4
+        with:
+          name: kinogryz-s01-serial-one-minute-3
+          run-id: 39904598345
+          github-token: ${{ github.token }}
+          path: original_shard
+      - name: Diagnose long no-cut stretches and potential sentence endings
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          w=json.loads(Path("original_shard/word_timestamps.json").read_text())
+          spans=json.loads(Path("original_shard/continuous_cut_plan.json").read_text())["parts"]
+          for lo,hi in [(16460,16690),(19490,19600),(21400,21459)]:
+              q=[x for x in w if lo-2<=x["start"]<=hi+2]
+              print("DIAG_REGION",lo,hi,"WORD_COUNT",len(q),flush=True)
+              if not q:continue
+              prev=None
+              for x in q:
+                  gap=round(x["start"]-prev["end"],3) if prev else None
+                  dur=round(x["end"]-x["start"],3)
+                  print("W",round(x["start"],3),round(x["end"],3),"DUR",dur,"GAP",gap,"CONF",x.get("confidence"),"TEXT",repr(x["text"]),flush=True)
+                  prev=x
+          print("OUTLIERS",[(i+1,s["start"],s["end"],round(s["end"]-s["start"],2)) for i,s in enumerate(spans) if not 45<=s["end"]-s["start"]<=76],flush=True)
+          PY
