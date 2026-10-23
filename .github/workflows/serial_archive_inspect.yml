@@ -1,0 +1,52 @@
+name: Inspect old contiguous season archive for clean 60s recut
+on:
+  push:
+    paths: [".github/workflows/serial_archive_inspect.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download only first old contiguous archive (no Google Drive request)
+        uses: actions/download-artifact@v4
+        with:
+          name: kinogryz-s01-serial-contiguous-1
+          run-id: 39746820682
+          github-token: ${{ github.token }}
+          path: old
+      - name: Check old archive contents and central picture
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json,subprocess
+          root=Path("old")
+          allfiles=list(root.rglob("*"))
+          print("FILES",len(allfiles),"TOTAL_BYTES",sum(f.stat().st_size for f in allfiles if f.is_file()),flush=True)
+          for f in allfiles:
+              if f.is_file() and (f.suffix in (".json",".ass") or f.suffix==".mp4"):
+                  print("SAMPLE",str(f),f.stat().st_size,flush=True)
+                  if sum(1 for x in allfiles if x.is_file() and x.suffix==f.suffix)>8:break
+          for name in ("continuous_cut_plan.json","word_timestamps.json","rendered_parts.json","transcript_review.json"):
+              matches=list(root.rglob(name))
+              print("MANIFEST",name,[str(x) for x in matches],flush=True)
+              if matches:
+                  data=json.loads(matches[0].read_text())
+                  if name=="continuous_cut_plan.json":
+                      print("PLAN_RANGE",data.get("range"),"SPANS",len(data.get("parts",[])),flush=True)
+                      print("FIRST_SPANS",data.get("parts",[])[:6],flush=True)
+                  if name=="word_timestamps.json":
+                      print("WORD_COUNT",len(data),"FIRST_WORDS",data[:15],flush=True)
+                  if name=="rendered_parts.json":
+                      print("RENDER_COUNT",len(data),"FIRST_RENDER",data[:3],flush=True)
+                  if name=="transcript_review.json":print("SUSPECT_WORDS",len(data),flush=True)
+          vids=list(root.rglob("*.mp4"))
+          if vids:
+              v=vids[0]
+              out=subprocess.check_output(["ffprobe","-v","error","-show_entries","format=duration,size:stream=codec_type,codec_name,width,height","-of","json",str(v)],text=True)
+              print("FIRST_VIDEO",str(v),out,flush=True)
+          PY
