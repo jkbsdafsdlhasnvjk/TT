@@ -22,6 +22,7 @@ def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("folder")
     ap.add_argument("--count",type=int,default=40)
+    ap.add_argument("--skip",type=int,default=0,help="Skip earlier priority samples after spacing deduplication")
     ap.add_argument("--model",default="large-v3-turbo")
     args=ap.parse_args()
     root=Path(args.folder)
@@ -41,7 +42,8 @@ def main():
     for conf,t,item in issues:
         if any(abs(t-s)<5.0 for s in times):continue
         picked.append(item);times.append(t)
-        if len(picked)>=args.count:break
+        if len(picked)>=args.count+args.skip:break
+    picked=picked[args.skip:]
     print("PLAN",plan["range"],"MP4S",len(parts),"REVIEW_TOTAL",len(review),"SAMPLED",len(picked),flush=True)
     # Verify all MP4 streams, not just filenames and reported metadata.
     av_errors=[]
@@ -77,10 +79,26 @@ def main():
         w=words[item["index"]]
         alt_tokens=[norm(k) for k in re.findall(r"[а-яёА-ЯЁ0-9-]+",alt)]
         agrees=norm(w["text"]) in alt_tokens
+        # Independent word timing is relative to the extracted MP4 audio window.
+        # Convert to original season time before comparing against source ASR.
+        alt_words=[]
+        for seg in segs:
+            for aw in seg.words or ():
+                if aw.start is None or aw.end is None:continue
+                alt_words.append({"text":aw.word.strip(),
+                    "start":round(p["start"]+a+float(aw.start),3),
+                    "end":round(p["start"]+a+float(aw.end),3)})
+        candidates=[x for x in alt_words if norm(x["text"])==norm(w["text"])]
+        closest=min(candidates,key=lambda x:abs(x["start"]-w["start"])) if candidates else None
+        timing_delta=round(closest["start"]-w["start"],3) if closest else None
+        timing_consistent=abs(timing_delta)<=.60 if timing_delta is not None else None
         row={"file":p["name"],"source_time":t,"relative_time":round(rel,2),
              "original_word":w["text"],"original_confidence":w["confidence"],
              "issue_type":item["type"],"alternate_transcript":alt,
              "exact_word_present_in_alt":agrees,
+             "independent_word_match":closest,
+             "word_start_delta_seconds":timing_delta,
+             "timing_within_0_60s":timing_consistent,
              "review_status":"NEEDS_HUMAN_AUDIO_REVIEW"}
         comparisons.append(row)
         print("CROSSCHECK",n,"/",len(picked),round(t,2),repr(w["text"]),
@@ -88,9 +106,11 @@ def main():
     report={"source_range":plan["range"],"mp4_checked":len(parts),
             "mp4_errors":av_errors,"all_review_items":len(review),
             "sampled":len(comparisons),"crosscheck":comparisons,
+            "independent_text_disagreements":sum(not x["exact_word_present_in_alt"] for x in comparisons),
+            "independent_timing_disagreements":sum(x["timing_within_0_60s"] is False for x in comparisons),
             "subtitle_language_qa":"NOT_CERTIFIED",
             "note":"Alternative ASR is diagnostic only, not ground truth."}
-    Path(f"qa_crosscheck_{int(plan['range'][0])}.json").write_text(
+    Path(f"qa_crosscheck_{int(plan['range'][0])}_{args.skip}_{args.count}.json").write_text(
         json.dumps(report,ensure_ascii=False,indent=2),encoding="utf8")
     if av_errors:raise SystemExit("MP4 integrity check failed")
 if __name__=="__main__":main()
