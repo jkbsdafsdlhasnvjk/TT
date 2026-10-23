@@ -1,0 +1,71 @@
+name: Kinogryz S01 final shards duration and Russian subtitle audit
+on:
+  push:
+    paths: [".github/workflows/serial_final_shards_qa.yml"]
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 115
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [3,4]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install FFmpeg and independent speech recognizer
+        run: |
+          bash scripts/check_ffmpeg.sh
+          python -m pip install -q numpy faster-whisper==1.2.1
+      - name: Download exact new short MP4s from completed run
+        uses: actions/download-artifact@v4
+        with:
+          name: kinogryz-s01-serial-one-minute-${{ matrix.part }}
+          run-id: 39904598345
+          github-token: ${{ github.token }}
+          path: completed_part
+      - name: Audit boundaries and subtitle timing
+        env:
+          PART_NUMBER: ${{ matrix.part }}
+        run: |
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          root=Path("completed_part")
+          plan=json.loads((root/"continuous_cut_plan.json").read_text())
+          words=json.loads((root/"word_timestamps.json").read_text())
+          parts=plan["parts"]
+          risks=[]
+          for p in parts[:-1]:
+            t=p["end"]
+            before=[w for w in words if w["end"]<=t]
+            after=[w for w in words if w["start"]>=t]
+            if not before or not after:continue
+            w,n=before[-1],after[0]
+            gap=round(n["start"]-w["end"],3)
+            punct=w["text"].endswith((".","!","?","…"))
+            if gap<.4 or (not punct and gap<.8):
+              risks.append({"cut":t,"gap":gap,"last":w["text"],"next":n["text"]})
+          outliers=[{"file":f"part-{i+1}","start":p["start"],"end":p["end"],"duration":round(p["end"]-p["start"],2),"reason":p["reason"]}
+            for i,p in enumerate(parts) if not 45<=p["end"]-p["start"]<=76]
+          report={"part":int(os.environ["PART_NUMBER"]),"range":plan["range"],"clips":len(parts),
+            "outliers":outliers,"dialogue_cut_risks":risks,"review_items":plan["review_items"],
+            "speech_verified":False}
+          Path("final_shard_boundary.json").write_text(json.dumps(report,ensure_ascii=False,indent=2))
+          print("FINAL_BOUNDARY_AUDIT",json.dumps(report,ensure_ascii=False),flush=True)
+          PY
+      - name: Verify AV and independently crosscheck 30 suspect words
+        run: python scripts/serial_independent_qa.py completed_part --count 30 --model large-v3-turbo
+      - name: Save QA reports for review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kinogryz-s01-final-shard-audit-${{ matrix.part }}
+          path: |
+            final_shard_boundary.json
+            qa_crosscheck_*.json
+          if-no-files-found: warn
+          retention-days: 30
