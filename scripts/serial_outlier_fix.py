@@ -52,7 +52,14 @@ def local_plan(words,spans,left,right):
         return result
     ans=try_solve(False)
     if ans is None:ans=try_solve(True)
-    if ans is None:raise RuntimeError(f"No natural word-safe 45-76s repair for {left+1}..{right+1} [{lo},{hi}]")
+    if ans is None:
+        possible=sorted((round(t,2),round(score,2),round(gap,2)) for t,score,reason,gap in possible_cuts(relevant,[],lo,hi))
+        times=[lo]+[x[0] for x in possible]+[hi]
+        holes=sorted(((round(b-a,2),round(a,2),round(b,2)) for a,b in zip(times,times[1:])),reverse=True)
+        print("NO_SAFE_PATH",left+1,right+1,"DURATION",round(hi-lo,2),
+              "CANDIDATES",len(possible),"LONGEST_UNCUT_GAPS",holes[:6],
+              "CANDIDATE_EXAMPLES",possible[:18],flush=True)
+        raise RuntimeError(f"No natural word-safe 45-76s repair for {left+1}..{right+1} [{lo},{hi}]")
     return ans
 
 def fix(words,spans):
@@ -64,8 +71,21 @@ def fix(words,spans):
             windows[-1]=(windows[-1][0],max(windows[-1][1],b))
         else:windows.append((a,b))
     replacements=[]
-    for a,b in windows:
-        attempt=local_plan(words,spans,a,b)
+    for idx,(a,b) in enumerate(windows):
+        previous_end=windows[idx-1][1] if idx else -1
+        next_start=windows[idx+1][0] if idx+1<len(windows) else len(spans)
+        attempt=None
+        for margin in range(0,8):
+            aa=max(previous_end+1,a-margin)
+            bb=min(next_start-1,b+margin)
+            try:
+                attempt=local_plan(words,spans,aa,bb)
+                a,b=aa,bb
+                break
+            except RuntimeError as exc:
+                print("TRY_WIDER_WINDOW",margin,str(exc),flush=True)
+        if attempt is None:
+            raise RuntimeError(f"Could not find natural 45-76s cuts near original parts {a+1}..{b+1}")
         print("REPAIR_WINDOW",a+1,b+1,"OLD",[(round(s["end"]-s["start"],2)) for s in spans[a:b+1]],
               "NEW",[(round(s["end"]-s["start"],2)) for s in attempt],flush=True)
         replacements.append((a,b,attempt))
