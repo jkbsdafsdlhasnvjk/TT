@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Check all Python scripts
-        run: python -m py_compile scripts/serial_parts.py scripts/serial_seams.py
+        run: python -m py_compile scripts/serial_parts.py scripts/serial_seams.py scripts/serial_validate.py
       - name: Prepare FFmpeg
         run: bash scripts/check_ffmpeg.sh
       - name: Restore season from Actions cache
@@ -72,9 +72,11 @@ jobs:
         shell: bash
         run: |
           read START END < <(python -c 'import json,os; p=int(os.environ["PART"]); d=json.load(open("serial_seams.json"))["parts"][p-1]; print(d["start"],d["end"])')
-          python scripts/serial_parts.py --source season.mp4 --start "$START" --end "$END" --model medium --max-render 0 --crf 17 --out "serial_part_${{ matrix.part }}"
+          python scripts/serial_parts.py --source season.mp4 --start "$START" --end "$END" --model medium --max-render 0 --crf 17 --segment-id ${{ matrix.part }} --out "serial_part_${{ matrix.part }}"
         env:
           PART: ${{ matrix.part }}
+      - name: Verify no cut-plan gaps, overlapping subtitle events, missing MP4s or word-count mismatch
+        run: python scripts/serial_validate.py "serial_part_${{ matrix.part }}"
       - name: Save full MP4 sequence, subtitles and suspect-word report
         if: always()
         uses: actions/upload-artifact@v4
@@ -82,4 +84,4 @@ jobs:
           name: kinogryz-s01-serial-one-minute-${{ matrix.part }}
           path: serial_part_${{ matrix.part }}/
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 30
