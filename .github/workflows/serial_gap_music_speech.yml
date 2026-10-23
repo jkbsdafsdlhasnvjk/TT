@@ -1,0 +1,64 @@
+name: Kinogryz S01 independent music-vs-speech check at repaired cuts
+on:
+  push:
+    paths: [".github/workflows/serial_gap_music_speech.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  classify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install FFmpeg and independent AudioSet classifier
+        run: |
+          bash scripts/check_ffmpeg.sh
+          python -m pip install -q numpy==1.26.4 transformers==4.44.2 librosa==0.10.2.post1
+          python -m pip install -q 'torch==2.5.1+cpu' --index-url https://download.pytorch.org/whl/cpu
+      - name: Restore original from cache, never download Google Drive
+        uses: actions/cache/restore@v4
+        with:
+          path: season.mp4
+          key: kinogryz-s01-source-102EHQNQ-kDPZ18lKEgr5pWPDDoQnLe3T-v1
+          fail-on-cache-miss: true
+      - name: Independently classify soundtrack around both repaired cuts
+        run: |
+          python - <<'PY'
+          import json,subprocess
+          import numpy as np
+          import torch
+          from transformers import ASTFeatureExtractor, ASTForAudioClassification
+          lo=16480.0; hi=16663.13; sr=16000
+          raw=subprocess.check_output(["ffmpeg","-v","error","-ss",str(lo),"-i","season.mp4","-t",str(hi-lo),"-vn","-ac","1","-ar",str(sr),"-f","s16le","-"])
+          audio=np.frombuffer(raw,dtype="<i2").astype(np.float32)/32768.
+          model_name="MIT/ast-finetuned-audioset-10-10-0.4593"
+          feature=ASTFeatureExtractor.from_pretrained(model_name)
+          model=ASTForAudioClassification.from_pretrained(model_name).eval()
+          torch.set_num_threads(4)
+          centers=sorted(set([round(lo+5+i*10,2) for i in range(18)]+[16540.,16612.]))
+          rows=[]
+          for t in centers:
+              a=max(lo,t-4.0);b=min(hi,t+4.0)
+              sample=audio[int((a-lo)*sr):int((b-lo)*sr)]
+              inputs=feature(sample,sampling_rate=sr,return_tensors="pt")
+              with torch.no_grad(): logits=model(**inputs).logits[0]
+              scores=torch.sigmoid(logits)
+              top=torch.topk(scores,8)
+              tags=[{"label":model.config.id2label[int(i)],"score":round(float(s),4)} for s,i in zip(top.values,top.indices)]
+              relevant=[{"label":v,"score":round(float(scores[i]),4)} for i,v in model.config.id2label.items() if any(k in v.lower() for k in ("speech","music","singing","conversation","narration","male speech","female speech","silence"))]
+              row={"center_source_time":t,"top_labels":tags,"speech_music_labels":relevant}
+              rows.append(row)
+              print("AUDIOSET",json.dumps(row,ensure_ascii=False),flush=True)
+          result={"source_range":[lo,hi],"cuts":[16540.,16612.],"model":model_name,"windows":rows,"human_listening_verified":False,
+             "note":"AudioSet tags are independent probabilistic music/speech diagnostics, not proof of no spoken dialogue or safe cuts."}
+          open("gap_music_speech_audit.json","w").write(json.dumps(result,ensure_ascii=False,indent=2))
+          PY
+      - name: Preserve evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kinogryz-s01-gap-music-speech-classification
+          path: gap_music_speech_audit.json
+          if-no-files-found: warn
+          retention-days: 30
