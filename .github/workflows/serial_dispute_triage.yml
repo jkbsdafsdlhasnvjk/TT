@@ -1,0 +1,74 @@
+name: Kinogryz S01 unresolved Russian subtitle audio review packs
+on:
+  push:
+    paths: [".github/workflows/serial_dispute_triage.yml"]
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - part: 1
+            source_run: 39904598345
+            source_artifact: kinogryz-s01-serial-one-minute-1
+          - part: 2
+            source_run: 39904598345
+            source_artifact: kinogryz-s01-serial-one-minute-2
+          - part: 3
+            source_run: 39952544141
+            source_artifact: kinogryz-s01-serial-repaired-one-minute-3
+          - part: 4
+            source_run: 39946865872
+            source_artifact: kinogryz-s01-serial-repaired-one-minute-4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify script and FFmpeg
+        run: |
+          python -m py_compile scripts/serial_dispute_triage.py
+          bash scripts/check_ffmpeg.sh
+      - name: Get first independent word audit reports from GitHub
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 39994389360
+          github-token: ${{ github.token }}
+          pattern: kinogryz-s01-expanded-word-timing-audit-*
+          merge-multiple: true
+          path: audits/pass1
+      - name: Get second independent word audit reports from GitHub
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 40002840354
+          github-token: ${{ github.token }}
+          pattern: kinogryz-s01-word-timing-audit-pass2-*
+          merge-multiple: true
+          path: audits/pass2
+      - name: Get completed short MP4s only (no Drive download)
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.source_artifact }}
+          run-id: ${{ matrix.source_run }}
+          github-token: ${{ github.token }}
+          path: completed
+      - name: Build prioritized audio-backed word review queue
+        run: |
+          python scripts/serial_dispute_triage.py \
+            --reports audits \
+            --completed completed \
+            --part ${{ matrix.part }} \
+            --max-clips 150 \
+            --output "triage_part_${{ matrix.part }}"
+      - name: Upload reports and listenable audio snippets (NOT corrected videos)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kinogryz-s01-unverified-subtitle-audio-triage-${{ matrix.part }}
+          path: triage_part_${{ matrix.part }}/
+          if-no-files-found: warn
+          retention-days: 30
