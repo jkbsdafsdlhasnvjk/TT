@@ -1,0 +1,63 @@
+name: Kinogryz S01 independent Russian word audit pass 2
+on:
+  push:
+    paths: [".github/workflows/serial_deep_word_qa_pass2.yml"]
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - part: 1
+            run_id: 39904598345
+            artifact_name: kinogryz-s01-serial-one-minute-1
+          - part: 2
+            run_id: 39904598345
+            artifact_name: kinogryz-s01-serial-one-minute-2
+          - part: 3
+            run_id: 39952544141
+            artifact_name: kinogryz-s01-serial-repaired-one-minute-3
+          - part: 4
+            run_id: 39946865872
+            artifact_name: kinogryz-s01-serial-repaired-one-minute-4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install FFmpeg and independent speech recognizer
+        run: |
+          bash scripts/check_ffmpeg.sh
+          python -m pip install -q numpy faster-whisper==1.2.1
+          python -m py_compile scripts/serial_independent_qa.py
+      - name: Retrieve completed short MP4s from GitHub artifacts only
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          run-id: ${{ matrix.run_id }}
+          github-token: ${{ github.token }}
+          path: completed_part
+      - name: Locate word timestamps
+        shell: bash
+        run: |
+          set -euo pipefail
+          plan=$(find completed_part -type f -name continuous_cut_plan.json -print -quit)
+          test -n "$plan"
+          clip_dir=$(dirname "$plan")
+          test -f "$clip_dir/word_timestamps.json"
+          test -f "$clip_dir/transcript_review.json"
+          test -f "$clip_dir/rendered_parts.json"
+          echo "CLIP_DIR=$clip_dir" >> "$GITHUB_ENV"
+      - name: Crosscheck next 160 spaced high-risk words per part
+        run: python scripts/serial_independent_qa.py "$CLIP_DIR" --skip 160 --count 160 --model large-v3-turbo
+      - name: Upload diagnostic reports (not human-verified)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kinogryz-s01-word-timing-audit-pass2-${{ matrix.part }}
+          path: qa_crosscheck_*.json
+          if-no-files-found: warn
+          retention-days: 30
