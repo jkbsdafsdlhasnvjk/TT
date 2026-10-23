@@ -1,4 +1,4 @@
-name: Kinogryz S01 part 3 wider safe-cut repair
+name: Kinogryz S01 part 3 no-ASR gap safe recut v2
 on:
   push:
     paths: [".github/workflows/serial_repair_part3.yml"]
