@@ -1,0 +1,43 @@
+name: Pony video visual and framing inspection
+on:
+  push:
+    paths: [".github/workflows/pony_visual_probe.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install FFmpeg and gdown
+        run: |
+          bash scripts/check_ffmpeg.sh
+          python -m pip install -q gdown pillow
+      - name: Download and inspect source frames
+        run: |
+          gdown --fuzzy "https://drive.google.com/file/d/1WQrBSFa66b_oMnQHpruJxfyy_py7tEwX/view" -O pony.mp4
+          python - <<'PY'
+          import subprocess, json, io, base64
+          from PIL import Image,ImageOps,ImageDraw
+          duration=float(json.loads(subprocess.check_output(["ffprobe","-v","error","-show_entries","format=duration","-of","json","pony.mp4"]))["format"]["duration"])
+          print("DURATION",duration,flush=True)
+          frames=[]
+          for fraction in [.03,.2,.4,.6,.8,.96]:
+              t=duration*fraction
+              raw=subprocess.check_output(["ffmpeg","-hide_banner","-loglevel","error","-ss",str(t),"-i","pony.mp4","-frames:v","1","-vf","scale=360:-2","-f","image2pipe","-vcodec","mjpeg","-"])
+              img=Image.open(io.BytesIO(raw)).convert("RGB")
+              img.thumbnail((360,360))
+              frames.append((t,img))
+          canvas=Image.new("RGB",(3*380,2*410),(15,15,20))
+          draw=ImageDraw.Draw(canvas)
+          for i,(t,im) in enumerate(frames):
+              x=(i%3)*380+10; y=(i//3)*410+10
+              canvas.paste(im,(x,y))
+              draw.text((x,y+365),f"frame @ {t:.1f}s",fill="white")
+          buf=io.BytesIO(); canvas.save(buf,format="JPEG",quality=72,optimize=True)
+          print("CONTACT_SHEET_B64_START",flush=True)
+          print(base64.b64encode(buf.getvalue()).decode(),flush=True)
+          print("CONTACT_SHEET_B64_END",flush=True)
+          PY
