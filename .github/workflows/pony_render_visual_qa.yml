@@ -1,0 +1,41 @@
+name: Kinogryz pony final subtitle on-frame QA
+on:
+  push:
+    paths: [".github/workflows/pony_render_visual_qa.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  visual:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download final released MP4
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download kinogryz-pony-41s-final -p 'Kinogryz_Pony_41s_Vertical_Synced_RU_Captions.mp4'
+          bash scripts/check_ffmpeg.sh
+          python -m pip install -q pillow
+      - name: Verify burned subtitle text visibility and layout in three frames
+        run: |
+          python - <<'PY'
+          import subprocess,io,base64,json
+          from PIL import Image, ImageDraw
+          file="Kinogryz_Pony_41s_Vertical_Synced_RU_Captions.mp4"
+          info=json.loads(subprocess.check_output(["ffprobe","-v","error","-show_entries","format=duration:stream=codec_type,codec_name,width,height","-of","json",file],text=True))
+          print("FINAL_METADATA",json.dumps(info),flush=True)
+          times=[8.0,19.0,36.0]
+          sheet=Image.new("RGB",(3*420,790),"#111111")
+          draw=ImageDraw.Draw(sheet)
+          for i,t in enumerate(times):
+              raw=subprocess.check_output(["ffmpeg","-loglevel","error","-ss",str(t),"-i",file,"-frames:v","1","-vf","scale=405:-2","-f","image2pipe","-vcodec","mjpeg","-"])
+              im=Image.open(io.BytesIO(raw)).convert("RGB")
+              sheet.paste(im,(i*420+8,0))
+              draw.text((i*420+8,734),f"t={t}s",fill="white")
+          buf=io.BytesIO();sheet.save(buf,format="JPEG",quality=68,optimize=True)
+          print("CAPTIONS_CONTACT_B64_START",flush=True)
+          print(base64.b64encode(buf.getvalue()).decode(),flush=True)
+          print("CAPTIONS_CONTACT_B64_END",flush=True)
+          PY
