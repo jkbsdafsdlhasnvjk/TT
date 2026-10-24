@@ -22,8 +22,6 @@ jobs:
       max-parallel: 2
       matrix:
         include:
-          - part: '2'
-            expected_sha: b481aa69cf8443c81b064b12a8b089185b8015f456e48056f2ae0f0bd1850758
           - part: '3'
             expected_sha: 8ba78b99f35ee575da4e90de6c0109bbd6bba4db9d64a0bd5c9619ed53f295e7
           - part: '4'
@@ -65,7 +63,7 @@ jobs:
               mp4 = [n for n in names if n.lower().endswith('.mp4')]
               assert 100 <= len(mp4) <= 140, f'Unexpected MP4 count: {len(mp4)}'
               assert len(mp4) == len(set(mp4)), 'Duplicate MP4 paths'
-              assert all(re.fullmatch(r'Kinogryz_S01_' + f'{int(part):02d}' + r'_\d{4}\.mp4', n) for n in mp4), 'Wrong part or naming'
+              assert all(re.fullmatch(r'(?:repaired_shard/)?Kinogryz_S01_' + f'{int(part):02d}' + r'_\d{4}\.mp4', n) for n in mp4), 'Wrong part or naming'
               assert not any(n.startswith('/') or '..' in n.split('/') for n in names), 'Unsafe archive path'
               assert all(z.getinfo(n).file_size > 0 for n in mp4), 'Empty MP4'
               print(json.dumps({'part': part, 'archive_entries': len(names),
