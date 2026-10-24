@@ -16,7 +16,7 @@ jobs:
       - name: Set up speech recognition
         run: python -m pip install -q faster-whisper==1.2.1 numpy gdown
       - name: Download exact user video from Google Drive
-        run: gdown --fuzzy "https://drive.google.com/file/d/1WQrBSFa66b_oMnQHpruJxfyy_py7tEwX/view" -O pony_scene.mp4
+        run: gdown "https://drive.google.com/uc?id=1WQrBSFa66b_oMnQHpruJxfyy_py7tEwX" -O pony_scene.mp4
       - name: Analyze original video and Russian dialogue
         run: |
           python scripts/transcribe_single_scene.py pony_scene.mp4 pony_asr
