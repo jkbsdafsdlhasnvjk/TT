@@ -1,0 +1,138 @@
+name: S01 remaining parts media and seam QA (unverified)
+on:
+  push:
+    paths:
+      - .github/workflows/s01_remaining_media_seam_qa.yml
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  audit_remaining:
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - {part: 2, artifact: 12489180492, sha256: b481aa69cf8443c81b064b12a8b089185b8015f456e48056f2ae0f0bd1850758, expected_count: 120, planned_duration: 7157.8}
+          - {part: 3, artifact: 12501837192, sha256: 8ba78b99f35ee575da4e90de6c0109bbd6bba4db9d64a0bd5c9619ed53f295e7, expected_count: 121, planned_duration: 7155.08}
+          - {part: 4, artifact: 12499355073, sha256: c75c861169ad2504ea77e2973e066c501db603207768670d3842a4998872ec25, expected_count: 117, planned_duration: 7136.98}
+    env:
+      PART_NUMBER: ${{ matrix.part }}
+      EXPECTED_COUNT: ${{ matrix.expected_count }}
+      PLANNED_DURATION: ${{ matrix.planned_duration }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Install media inspection tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg unzip
+          python -m pip install --quiet numpy
+      - name: Download preserved source artifact (never re-download Google Drive original)
+        run: |
+          set -euo pipefail
+          gh api "/repos/$GITHUB_REPOSITORY/actions/artifacts/${{ matrix.artifact }}/zip" > source.zip
+          echo "${{ matrix.sha256 }}  source.zip" | sha256sum -c -
+          mkdir -p archive audit
+          unzip -q source.zip -d archive
+          df -h .
+      - name: Inspect 120 clips, video/audio stream edges, and 119 dialogue seams
+        shell: bash
+        run: |
+          python - <<'PY'
+          import csv, json, re, subprocess, pathlib, numpy as np, wave, os
+          root=pathlib.Path('archive')
+          out=pathlib.Path('audit'); out.mkdir(exist_ok=True)
+          files=sorted(root.rglob('*.mp4'))
+          inventory=[str(p.relative_to(root)) for p in root.rglob('*') if p.is_file() and p.suffix.lower() != '.mp4']
+          (out/'non_mp4_inventory.json').write_text(json.dumps(inventory,ensure_ascii=False,indent=2),encoding='utf-8')
+          def run(args):
+              return subprocess.run(args,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+          def probe(path):
+              r=run(['ffprobe','-v','error','-show_format','-show_streams','-of','json',str(path)])
+              if r.returncode: raise RuntimeError(r.stderr.decode(errors='replace')[-400:])
+              return json.loads(r.stdout)
+          rows=[]; metadata=[]; durations=[]; audio=[]
+          part=int(os.environ['PART_NUMBER'])
+          for i,p in enumerate(files,1):
+              issues=[]
+              m=re.search(rf'Kinogryz_S01_{part:02d}_(\d{{4}})\.mp4$',p.name)
+              if not m or int(m.group(1))!=i: issues.append('unexpected_filename_or_sequence')
+              try:
+                  info=probe(p)
+                  streams=info.get('streams',[])
+                  vs=[s for s in streams if s.get('codec_type')=='video']
+                  aus=[s for s in streams if s.get('codec_type')=='audio']
+                  dur=float(info['format']['duration'])
+                  if not vs: issues.append('missing_video')
+                  if not aus: issues.append('missing_audio')
+                  if not 45<=dur<=76: issues.append('duration_outside_45_76')
+                  for kind,ss in [('video',vs),('audio',aus)]:
+                      if ss and ss[0].get('duration') is not None:
+                          if abs(float(ss[0]['duration'])-dur)>0.3: issues.append(kind+'_duration_mismatch')
+                  for t,label in [(0,'start'),(max(0,dur-0.55),'end')]:
+                      if vs:
+                          z=run(['ffmpeg','-v','error','-ss',str(t),'-i',str(p),'-t','0.45','-map','0:v:0','-f','null','-'])
+                          if z.returncode: issues.append('video_decode_'+label)
+                      if aus:
+                          z=run(['ffmpeg','-v','error','-ss',str(t),'-i',str(p),'-t','0.45','-map','0:a:0','-f','null','-'])
+                          if z.returncode: issues.append('audio_decode_'+label)
+                  metadata.append({'file':p.name,'duration':dur,'video_codec':vs[0].get('codec_name') if vs else None,'audio_codec':aus[0].get('codec_name') if aus else None,'width':vs[0].get('width') if vs else None,'height':vs[0].get('height') if vs else None})
+              except Exception as e:
+                  dur=0.0; issues.append('probe_error:'+str(e)[:100])
+              durations.append(dur)
+              rows.append({'file':p.name,'duration_s':f'{dur:.4f}','issues':';'.join(issues)})
+          def pcm(path,start,duration=2):
+              z=run(['ffmpeg','-v','error','-ss',str(max(0,start)),'-i',str(path),'-t',str(duration),'-vn','-map','0:a:0','-ac','1','-ar','16000','-f','s16le','-'])
+              if z.returncode: raise RuntimeError(z.stderr.decode(errors='replace')[-200:])
+              return np.frombuffer(z.stdout,dtype='<i2').copy()
+          seams=[]
+          for i in range(len(files)-1):
+              a,b=files[i],files[i+1]
+              try:
+                  left=pcm(a,max(0,durations[i]-2))
+                  right=pcm(b,0)
+                  if min(len(left),len(right))<4000: raise RuntimeError('too_short_audio')
+                  n=min(5600,len(left),len(right))
+                  lr=float(np.sqrt(np.mean((left[-n:].astype(float)/32768)**2)))
+                  rr=float(np.sqrt(np.mean((right[:n].astype(float)/32768)**2)))
+                  # Exact repeated audio can indicate an overlap. This is a heuristic, not proof.
+                  dup=0.0
+                  for seconds in (0.35,0.5,0.75,1.0,1.25,1.5):
+                      k=int(seconds*16000)
+                      if k>min(len(left),len(right)): continue
+                      x=left[-k:].astype(float); y=right[:k].astype(float)
+                      norm=np.linalg.norm(x)*np.linalg.norm(y)
+                      if norm>1e8: dup=max(dup,float(np.dot(x,y)/norm))
+                  suspicious=dup>0.93 or (lr>0.06 and rr>0.06)
+                  # Every seam is exported for listening; energy flags are only triage.
+                  audio4=np.concatenate((left,right))
+                  with wave.open(str(out/f'seam_{i+1:04d}_{i+2:04d}.wav'),'wb') as wf:
+                      wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(16000)
+                      wf.writeframes(audio4.tobytes())
+                  seams.append({'from':a.name,'to':b.name,'left_rms':f'{lr:.4f}','right_rms':f'{rr:.4f}','duplicate_audio_correlation':f'{dup:.4f}','review_priority':int(suspicious),'error':''})
+              except Exception as e:
+                  seams.append({'from':a.name,'to':b.name,'left_rms':'','right_rms':'','duplicate_audio_correlation':'','review_priority':1,'error':str(e)[:200]})
+          with (out/'clip_audit.csv').open('w',newline='',encoding='utf-8-sig') as f:
+              w=csv.DictWriter(f,fieldnames=['file','duration_s','issues']);w.writeheader();w.writerows(rows)
+          with (out/'seam_audit.csv').open('w',newline='',encoding='utf-8-sig') as f:
+              w=csv.DictWriter(f,fieldnames=['from','to','left_rms','right_rms','duplicate_audio_correlation','review_priority','error']);w.writeheader();w.writerows(seams)
+          (out/'media_metadata.json').write_text(json.dumps(metadata,ensure_ascii=False,indent=2),encoding='utf-8')
+          summary={'part':part,'clips':len(files),'seams':len(seams),'clips_with_flags':sum(bool(r['issues']) for r in rows),'seams_flagged_for_listening':sum(s['review_priority'] for s in seams),'duration_sum_s':round(sum(durations),3),'planned_range_s':float(os.environ['PLANNED_DURATION']),'duration_delta_s':round(sum(durations)-float(os.environ['PLANNED_DURATION']),3),'not_verified_by_listening':True}
+          (out/'summary.json').write_text(json.dumps(summary,indent=2),encoding='utf-8')
+          print('MEDIA_QA_SUMMARY',json.dumps(summary))
+          expected=int(os.environ['EXPECTED_COUNT'])
+          if len(files)!=expected: raise SystemExit(f'Expected {expected} clips, got {len(files)}')
+          PY
+      - name: Upload diagnostic report and seam audio (NOT publication-ready MP4)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: s01-part${{ matrix.part }}-media-seam-qa-unverified
+          path: audit/
+          if-no-files-found: warn
+          retention-days: 30
