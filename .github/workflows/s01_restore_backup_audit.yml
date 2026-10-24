@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   GH_TOKEN: ${{ github.token }}
@@ -27,6 +27,7 @@ jobs:
           mkdir -p chunks
           # gh release download <tag> cannot resolve a draft release without a published Git tag.
           gh api "/repos/$GITHUB_REPOSITORY/releases?per_page=100" > releases.json
+          jq -r '.[] | [.id, .tag_name, .draft] | @tsv' releases.json
           release_id=$(jq -r --arg tag "$BACKUP_TAG" '.[] | select(.tag_name == $tag and .draft == true) | .id' releases.json)
           test -n "$release_id"
           gh api "/repos/$GITHUB_REPOSITORY/releases/$release_id/assets?per_page=100" > assets.json
