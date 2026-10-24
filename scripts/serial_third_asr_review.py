@@ -27,7 +27,7 @@ def main():
     ap.add_argument("--input", type=Path, required=True)
     ap.add_argument("--output", type=Path, required=True)
     ap.add_argument("--part", type=int, required=True)
-    ap.add_argument("--model", default="distil-large-v3")
+    ap.add_argument("--model", default="large-v3")
     args = ap.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     with (args.input / "review_queue.csv").open(encoding="utf-8-sig", newline="") as fh:
@@ -123,8 +123,16 @@ def main():
         writer.writerows(results)
     (args.output / "three_way_review.json").write_text(
         json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
+    # Detect accidental English-only models: forcing language="ru" is not sufficient.
+    # A previous distil-large-v3 run transliterated all Russian speech into English.
+    cyrillic = sum(len(re.findall(r"[а-яё]", r.get("third_transcript", "").lower())) for r in results)
+    latin = sum(len(re.findall(r"[a-z]", r.get("third_transcript", "").lower())) for r in results)
+    cyrillic_share = cyrillic / max(1, cyrillic + latin)
+    language_mismatch = cyrillic_share < 0.60
     summary = {
         "part": args.part, "third_model": args.model,
+        "cyrillic_letter_share": round(cyrillic_share, 4),
+        "language_mismatch_suspected": language_mismatch,
         "samples": len(rows), "categories": dict(Counter(
             row["triage_category"] for row in results)),
         "errors": errors, "subtitle_text_verified": False,
@@ -136,6 +144,8 @@ def main():
     print("THIRD_ASR_SUMMARY", json.dumps(summary, ensure_ascii=False), flush=True)
     if errors:
         raise RuntimeError(f"{len(errors)} audio samples could not be processed")
+    if language_mismatch:
+        raise RuntimeError(f"ASR output language mismatch: only {cyrillic_share:.1%} Cyrillic letters; reject this diagnostic report")
 
 
 if __name__ == "__main__":
