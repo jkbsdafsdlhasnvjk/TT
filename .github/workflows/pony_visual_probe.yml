@@ -17,7 +17,7 @@ jobs:
           python -m pip install -q gdown pillow
       - name: Download and inspect source frames
         run: |
-          gdown --fuzzy "https://drive.google.com/file/d/1WQrBSFa66b_oMnQHpruJxfyy_py7tEwX/view" -O pony.mp4
+          gdown "https://drive.google.com/uc?id=1WQrBSFa66b_oMnQHpruJxfyy_py7tEwX" -O pony.mp4
           python - <<'PY'
           import subprocess, json, io, base64
           from PIL import Image,ImageOps,ImageDraw
