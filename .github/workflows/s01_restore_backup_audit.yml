@@ -18,24 +18,38 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
-      - name: Re-download all three draft-release chunks and verify original archive
+      - name: Download draft-release assets by API ID, verify SHA-256 and ZIP CRC
         shell: bash
         env:
           EXPECTED_SHA256: a03c1f820a55d55556029b8d2ae240d62d766d25badccd2a46570b59b752cf49
         run: |
           set -euo pipefail
           mkdir -p chunks
-          gh release download "$BACKUP_TAG" --repo "$GITHUB_REPOSITORY" \
-            --pattern 's01-unverified-part1-zip-chunk-*' --dir chunks
-          mapfile -t chunk_files < <(find chunks -maxdepth 1 -type f -name 's01-unverified-part1-zip-chunk-*' | LC_ALL=C sort)
-          printf 'Downloaded backup chunks:\n%s\n' "${chunk_files[@]}"
-          test "${#chunk_files[@]}" -eq 3
-          cat "${chunk_files[@]}" > restored.zip
+          # gh release download <tag> cannot resolve a draft release without a published Git tag.
+          gh api "/repos/$GITHUB_REPOSITORY/releases?per_page=100" > releases.json
+          release_id=$(jq -r --arg tag "$BACKUP_TAG" '.[] | select(.tag_name == $tag and .draft == true) | .id' releases.json)
+          test -n "$release_id"
+          gh api "/repos/$GITHUB_REPOSITORY/releases/$release_id/assets?per_page=100" > assets.json
+          for suffix in 00 01 02; do
+            filename="s01-unverified-part1-zip-chunk-$suffix"
+            id=$(jq -r --arg name "$filename" '.[] | select(.name == $name and .state == "uploaded") | .id' assets.json)
+            size=$(jq -r --arg name "$filename" '.[] | select(.name == $name) | .size' assets.json)
+            digest=$(jq -r --arg name "$filename" '.[] | select(.name == $name) | .digest // empty' assets.json)
+            test -n "$id"
+            test "$size" -gt 100000000
+            echo "Downloading $filename, asset id=$id, expected size=$size"
+            gh api -H 'Accept: application/octet-stream' \
+              "/repos/$GITHUB_REPOSITORY/releases/assets/$id" > "chunks/$filename"
+            test "$(stat -c%s "chunks/$filename")" -eq "$size"
+            if [[ "$digest" == sha256:* ]]; then
+              echo "${digest#sha256:}  chunks/$filename" | sha256sum -c -
+            fi
+          done
+          cat chunks/s01-unverified-part1-zip-chunk-* > restored.zip
           echo "$EXPECTED_SHA256  restored.zip" | sha256sum -c -
           python3 - <<'PY'
-          import collections, json, zipfile
-          p = 'restored.zip'
-          with zipfile.ZipFile(p) as z:
+          import json, zipfile
+          with zipfile.ZipFile('restored.zip') as z:
               names = z.namelist()
               mp4 = [n for n in names if n.lower().endswith('.mp4')]
               assert len(mp4) >= 90, f'Unexpectedly few MP4s: {len(mp4)}'
@@ -45,10 +59,8 @@ jobs:
               print(json.dumps({'archive_entries': len(names), 'mp4_count': len(mp4),
                   'first_mp4': sorted(mp4)[0], 'last_mp4': sorted(mp4)[-1],
                   'uncompressed_mp4_bytes': sum(z.getinfo(n).file_size for n in mp4)}, ensure_ascii=False))
-              # CRC check decompresses every entry without extracting copyrighted media to disk.
               corrupt = z.testzip()
               assert corrupt is None, f'CRC error: {corrupt}'
               print('Independent restore succeeded: SHA-256, ZIP CRC, member structure verified')
           PY
-          rm -f restored.zip
           echo 'Canary restored and verified; this does NOT validate spoken words, cut seams or subtitle timing.'
