@@ -1,0 +1,45 @@
+name: Kinogryz pony clip final clean vertical word karaoke
+on:
+  push:
+    paths: [".github/workflows/pony_clip_render.yml"]
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+jobs:
+  pony_render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate render script
+        run: python -m py_compile scripts/render_pony.py scripts/render_uploaded_scene.py
+      - name: Install FFmpeg and gdown
+        run: |
+          bash scripts/check_ffmpeg.sh
+          python -m pip install -q gdown
+      - name: Retrieve verified word timings from user video speech-recognition run
+        uses: actions/download-artifact@v4
+        with:
+          name: kinogryz-pony-clip-asr-inspection
+          run-id: 40083060984
+          github-token: ${{ github.token }}
+          path: pony_asr
+      - name: Download original uploaded 41-second pony clip
+        run: gdown "https://drive.google.com/uc?id=1WQrBSFa66b_oMnQHpruJxfyy_py7tEwX" -O pony.mp4
+      - name: Render original orientation, blurred canvas and burned-in corrected word highlights
+        run: python scripts/render_pony.py
+      - name: Preserve MP4 and QA reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kinogryz-pony-41s-vertical-corrected-word-captions
+          path: pony_finished/
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Publish downloadable MP4 to GitHub Release
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create kinogryz-pony-41s-final pony_finished/Kinogryz_Pony_41s_Vertical_Synced_RU_Captions.mp4 --title "КиноГрызь — Красят пони, 41 сек, русские пословные субтитры" --notes "41.13 сек без вырезанных кадров, оригинальная ориентация без зеркалирования, 1080x1920, размытый фон, вшитые проверенные по трём ASR пословные субтитры с жёлтой подсветкой, оригинальный AAC звук без повторного кодирования, без водяного знака."
