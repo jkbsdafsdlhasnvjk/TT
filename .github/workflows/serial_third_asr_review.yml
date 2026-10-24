@@ -33,6 +33,9 @@ jobs:
         run: |
           python -m pip install -q faster-whisper==1.2.1
           python -m py_compile scripts/serial_third_asr_review.py
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          command -v ffmpeg
           ffmpeg -version | head -n 1
       - name: Crosscheck uncertain words with third ASR (never auto-correct)
         run: |
