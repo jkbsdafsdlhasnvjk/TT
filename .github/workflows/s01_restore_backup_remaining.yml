@@ -1,0 +1,77 @@
+name: Independently restore S01 unverified backup parts 2-4
+
+on:
+  push:
+    paths:
+      - .github/workflows/s01_restore_backup_remaining.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  BACKUP_TAG: s01-unverified-qa-backup-20261024
+
+jobs:
+  restore_remaining:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - part: '2'
+            expected_sha: b481aa69cf8443c81b064b12a8b089185b8015f456e48056f2ae0f0bd1850758
+          - part: '3'
+            expected_sha: 8ba78b99f35ee575da4e90de6c0109bbd6bba4db9d64a0bd5c9619ed53f295e7
+          - part: '4'
+            expected_sha: c75c861169ad2504ea77e2973e066c501db603207768670d3842a4998872ec25
+    steps:
+      - name: Restore draft-release chunks independently, test SHA-256 and ZIP CRC
+        shell: bash
+        env:
+          PART: ${{ matrix.part }}
+          EXPECTED_SHA256: ${{ matrix.expected_sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p chunks
+          gh api "/repos/$GITHUB_REPOSITORY/releases?per_page=100" > releases.json
+          release_id=$(jq -r --arg tag "$BACKUP_TAG" '.[] | select(.tag_name == $tag and .draft == true) | .id' releases.json)
+          test -n "$release_id"
+          gh api "/repos/$GITHUB_REPOSITORY/releases/$release_id/assets?per_page=100" > assets.json
+          for suffix in 00 01 02; do
+            filename="s01-unverified-part${PART}-zip-chunk-$suffix"
+            id=$(jq -r --arg name "$filename" '.[] | select(.name == $name and .state == "uploaded") | .id' assets.json)
+            size=$(jq -r --arg name "$filename" '.[] | select(.name == $name) | .size' assets.json)
+            digest=$(jq -r --arg name "$filename" '.[] | select(.name == $name) | .digest // empty' assets.json)
+            test -n "$id"
+            test "$size" -gt 100000000
+            gh api -H 'Accept: application/octet-stream' \
+              "/repos/$GITHUB_REPOSITORY/releases/assets/$id" > "chunks/$filename"
+            test "$(stat -c%s "chunks/$filename")" -eq "$size"
+            if [[ "$digest" == sha256:* ]]; then
+              echo "${digest#sha256:}  chunks/$filename" | sha256sum -c -
+            fi
+          done
+          cat chunks/s01-unverified-part${PART}-zip-chunk-* > restored.zip
+          echo "$EXPECTED_SHA256  restored.zip" | sha256sum -c -
+          python3 - <<'PY'
+          import json, os, re, zipfile
+          part = os.environ['PART']
+          with zipfile.ZipFile('restored.zip') as z:
+              names = z.namelist()
+              mp4 = [n for n in names if n.lower().endswith('.mp4')]
+              assert 100 <= len(mp4) <= 140, f'Unexpected MP4 count: {len(mp4)}'
+              assert len(mp4) == len(set(mp4)), 'Duplicate MP4 paths'
+              assert all(re.fullmatch(r'Kinogryz_S01_' + part + r'_\d{4}\.mp4', n) for n in mp4), 'Wrong part or naming'
+              assert not any(n.startswith('/') or '..' in n.split('/') for n in names), 'Unsafe archive path'
+              assert all(z.getinfo(n).file_size > 0 for n in mp4), 'Empty MP4'
+              print(json.dumps({'part': part, 'archive_entries': len(names),
+                'mp4_count': len(mp4), 'first_mp4': sorted(mp4)[0], 'last_mp4': sorted(mp4)[-1],
+                'uncompressed_mp4_bytes': sum(z.getinfo(n).file_size for n in mp4)}, ensure_ascii=False))
+              corrupt = z.testzip()
+              assert corrupt is None, f'CRC error: {corrupt}'
+              print('Independent backup restore OK; does NOT verify subtitle text/timing.')
+          PY
