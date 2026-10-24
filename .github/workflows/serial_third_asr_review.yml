@@ -1,0 +1,50 @@
+name: Kinogryz S01 third-ASR diagnostic review (no MP4 changes)
+on:
+  push:
+    paths: [".github/workflows/serial_third_asr_review.yml"]
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        part: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download previously extracted audio ONLY (no source or MP4 downloads)
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 40030457403
+          name: kinogryz-s01-unverified-subtitle-audio-triage-${{ matrix.part }}
+          github-token: ${{ github.token }}
+          path: triage
+      - name: Restore cached ASR model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface/hub
+          key: kinogryz-third-asr-distil-large-v3-20261024
+      - name: Install third-ASR dependencies
+        run: |
+          python -m pip install -q faster-whisper==1.2.1
+          python -m py_compile scripts/serial_third_asr_review.py
+      - name: Crosscheck uncertain words with third ASR (never auto-correct)
+        run: |
+          python scripts/serial_third_asr_review.py \
+            --input triage \
+            --output third_asr_part_${{ matrix.part }} \
+            --part ${{ matrix.part }} \
+            --model distil-large-v3
+      - name: Save unverified three-way diagnostic report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kinogryz-s01-third-asr-unverified-${{ matrix.part }}
+          path: third_asr_part_${{ matrix.part }}/
+          if-no-files-found: warn
+          retention-days: 30
