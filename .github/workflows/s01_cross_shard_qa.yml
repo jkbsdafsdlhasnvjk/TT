@@ -1,0 +1,113 @@
+name: S01 cross-shard boundary and duration QA (unverified)
+on:
+  push:
+    paths:
+      - .github/workflows/s01_cross_shard_qa.yml
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  audit_cross_shard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Install analysis dependencies
+        run: |
+          python -m pip install --quiet numpy
+          ffprobe -version | head -1
+      - name: Download preserved GitHub ZIPs one at a time and extract only boundary MP4s
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p edges audit
+          while IFS=: read -r part artifact digest; do
+            echo "Extracting boundary clips for part $part from existing GitHub artifact $artifact"
+            gh api "/repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact/zip" > part.zip
+            echo "$digest  part.zip" | sha256sum -c -
+            python - "$part" <<'PY'
+          import sys,zipfile,pathlib,shutil
+          part=int(sys.argv[1])
+          with zipfile.ZipFile('part.zip') as z:
+              mp4=sorted(n for n in z.namelist() if n.lower().endswith('.mp4'))
+              expected={1:120,2:120,3:121,4:117}[part]
+              assert len(mp4)==expected,(part,len(mp4),expected)
+              for kind,name in [('first',mp4[0]),('last',mp4[-1])]:
+                  dst=pathlib.Path('edges')/f'part{part}_{kind}.mp4'
+                  with z.open(name) as inp,dst.open('wb') as out: shutil.copyfileobj(inp,out)
+                  print('BOUNDARY_CLIP',part,kind,name,dst.stat().st_size)
+              for n in z.namelist():
+                  if n.endswith('structural_qa.json'):
+                      dst=pathlib.Path('edges')/f'part{part}_structural_qa.json'
+                      dst.write_bytes(z.read(n))
+                      print('STRUCTURAL_QA',part,n)
+          PY
+            rm part.zip
+            df -h .
+          done <<'PARTS'
+          1:12488178386:a03c1f820a55d55556029b8d2ae240d62d766d25badccd2a46570b59b752cf49
+          2:12489180492:b481aa69cf8443c81b064b12a8b089185b8015f456e48056f2ae0f0bd1850758
+          3:12501837192:8ba78b99f35ee575da4e90de6c0109bbd6bba4db9d64a0bd5c9619ed53f295e7
+          4:12499355073:c75c861169ad2504ea77e2973e066c501db603207768670d3842a4998872ec25
+          PARTS
+      - name: Inspect all three inter-shard seams and encoder duration metadata
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json,pathlib,subprocess,wave,numpy as np,math
+          out=pathlib.Path('audit'); out.mkdir(exist_ok=True)
+          def run(args):
+              p=subprocess.run(args,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+              if p.returncode: raise RuntimeError(str(args)+': '+p.stderr.decode(errors='replace')[-600:])
+              return p.stdout
+          def probe(p):
+              return json.loads(run(['ffprobe','-v','error','-show_format','-show_streams','-of','json',str(p)]))
+          def pcm(p,start,duration=2.5):
+              data=run(['ffmpeg','-v','error','-ss',str(max(0,start)),'-i',str(p),'-t',str(duration),'-vn','-map','0:a:0','-ac','1','-ar','16000','-f','s16le','-'])
+              return np.frombuffer(data,dtype='<i2').copy()
+          results=[]
+          for part in (1,2,3):
+              a=pathlib.Path(f'edges/part{part}_last.mp4')
+              b=pathlib.Path(f'edges/part{part+1}_first.mp4')
+              pa,pb=probe(a),probe(b)
+              dur=float(pa['format']['duration'])
+              left=pcm(a,max(0,dur-2.5))
+              right=pcm(b,0)
+              assert len(left)>10000 and len(right)>10000,(part,len(left),len(right))
+              def rms(x):
+                  return float(np.sqrt(np.mean((x.astype(np.float64)/32768)**2)))
+              corr=[]
+              for secs in (0.35,0.5,0.75,1.0,1.25,1.5):
+                  k=int(secs*16000)
+                  x=left[-k:].astype(np.float64)
+                  y=right[:k].astype(np.float64)
+                  den=np.linalg.norm(x)*np.linalg.norm(y)
+                  corr.append({'seconds':secs,'correlation':round(float(np.dot(x,y)/den),5) if den>1e8 else None})
+              joined=np.concatenate([left,right])
+              with wave.open(str(out/f'cross_shard_{part}_{part+1}.wav'),'wb') as wf:
+                  wf.setnchannels(1);wf.setsampwidth(2);wf.setframerate(16000);wf.writeframes(joined.tobytes())
+              def summary(info):
+                  return {'container_duration':info['format'].get('duration'),'streams':[{'type':s.get('codec_type'),'codec':s.get('codec_name'),'start_time':s.get('start_time'),'duration':s.get('duration'),'time_base':s.get('time_base'),'nb_frames':s.get('nb_frames'),'sample_rate':s.get('sample_rate'),'avg_frame_rate':s.get('avg_frame_rate')} for s in info['streams']]}
+              results.append({'join':f'{part}->{part+1}','left_file':a.name,'right_file':b.name,'left':summary(pa),'right':summary(pb),'left_rms_last_0_35s':round(rms(left[-5600:]),5),'right_rms_first_0_35s':round(rms(right[:5600]),5),'audio_correlations':corr,'listening_verified':False,'timing_verified':False})
+          for part in (1,2,3,4):
+              f=pathlib.Path(f'edges/part{part}_structural_qa.json')
+              if f.exists():
+                  data=json.loads(f.read_text())
+                  (out/f'part{part}_structural_qa.json').write_text(json.dumps(data,ensure_ascii=False,indent=2))
+          (out/'cross_shard_report.json').write_text(json.dumps(results,ensure_ascii=False,indent=2))
+          for row in results:
+              print('CROSS_SHARD_QA',row['join'], 'leftRMS',row['left_rms_last_0_35s'],'rightRMS',row['right_rms_first_0_35s'],'corr',row['audio_correlations'])
+          print('IMPORTANT: algorithmic seam QA only; no listening or subtitle accuracy verified.')
+          PY
+      - name: Upload diagnostics, not publication-ready clips
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: s01-cross-shard-boundary-qa-unverified
+          path: audit/
+          if-no-files-found: warn
+          retention-days: 30
