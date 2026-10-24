@@ -9,6 +9,9 @@ import argparse
 import csv
 import json
 import re
+import subprocess
+
+import numpy as np
 from collections import Counter
 from pathlib import Path
 
@@ -40,8 +43,20 @@ def main():
         try:
             if not audio_file.is_file():
                 raise FileNotFoundError(audio_file)
+            # Decode with system FFmpeg to PCM. Some PyAV builds reject
+            # faster-whisper's metadata_errors argument when opening MP3.
+            # Supplying a NumPy waveform bypasses PyAV's decoder entirely.
+            pcm = subprocess.run(
+                ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
+                 "-i", str(audio_file), "-f", "f32le", "-ac", "1",
+                 "-ar", "16000", "pipe:1"],
+                check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            audio = np.frombuffer(pcm.stdout, dtype=np.float32).copy()
+            if audio.size == 0:
+                raise ValueError(f"Decoded audio is empty: {audio_file}")
             segments, info = model.transcribe(
-                str(audio_file), language="ru", beam_size=5, temperature=0,
+                audio, language="ru", beam_size=5, temperature=0,
                 vad_filter=False, condition_on_previous_text=False,
                 word_timestamps=True,
             )
