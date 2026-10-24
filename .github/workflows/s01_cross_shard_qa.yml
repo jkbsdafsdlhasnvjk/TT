@@ -18,6 +18,8 @@ jobs:
     steps:
       - name: Install analysis dependencies
         run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
           python -m pip install --quiet numpy
           ffprobe -version | head -1
       - name: Download preserved GitHub ZIPs one at a time and extract only boundary MP4s
