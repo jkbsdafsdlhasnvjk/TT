@@ -1,0 +1,54 @@
+name: Independently restore S01 unverified backup canary
+
+on:
+  push:
+    paths:
+      - .github/workflows/s01_restore_backup_audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  BACKUP_TAG: s01-unverified-qa-backup-20261024
+
+jobs:
+  restore_part1_canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Re-download all three draft-release chunks and verify original archive
+        shell: bash
+        env:
+          EXPECTED_SHA256: a03c1f820a55d55556029b8d2ae240d62d766d25badccd2a46570b59b752cf49
+        run: |
+          set -euo pipefail
+          mkdir -p chunks
+          gh release download "$BACKUP_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern 's01-unverified-part1-zip-chunk-*' --dir chunks
+          mapfile -t chunk_files < <(find chunks -maxdepth 1 -type f -name 's01-unverified-part1-zip-chunk-*' | LC_ALL=C sort)
+          printf 'Downloaded backup chunks:\n%s\n' "${chunk_files[@]}"
+          test "${#chunk_files[@]}" -eq 3
+          cat "${chunk_files[@]}" > restored.zip
+          echo "$EXPECTED_SHA256  restored.zip" | sha256sum -c -
+          python3 - <<'PY'
+          import collections, json, zipfile
+          p = 'restored.zip'
+          with zipfile.ZipFile(p) as z:
+              names = z.namelist()
+              mp4 = [n for n in names if n.lower().endswith('.mp4')]
+              assert len(mp4) >= 90, f'Unexpectedly few MP4s: {len(mp4)}'
+              assert len(mp4) == len(set(mp4)), 'Duplicate MP4 paths'
+              assert not any(n.startswith('/') or '..' in n.split('/') for n in names), 'Unsafe archive path'
+              assert all(z.getinfo(n).file_size > 0 for n in mp4), 'Empty MP4'
+              print(json.dumps({'archive_entries': len(names), 'mp4_count': len(mp4),
+                  'first_mp4': sorted(mp4)[0], 'last_mp4': sorted(mp4)[-1],
+                  'uncompressed_mp4_bytes': sum(z.getinfo(n).file_size for n in mp4)}, ensure_ascii=False))
+              # CRC check decompresses every entry without extracting copyrighted media to disk.
+              corrupt = z.testzip()
+              assert corrupt is None, f'CRC error: {corrupt}'
+              print('Independent restore succeeded: SHA-256, ZIP CRC, member structure verified')
+          PY
+          rm -f restored.zip
+          echo 'Canary restored and verified; this does NOT validate spoken words, cut seams or subtitle timing.'
