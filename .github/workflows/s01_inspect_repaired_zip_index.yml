@@ -1,0 +1,67 @@
+name: Inspect S01 repaired backup ZIP indices without full downloads
+
+on:
+  push:
+    paths:
+      - .github/workflows/s01_inspect_repaired_zip_index.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  inspect_zip_tail:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        part: ['3', '4']
+    steps:
+      - name: Download only last backup chunk and parse ZIP central directory
+        shell: bash
+        env:
+          PART: ${{ matrix.part }}
+        run: |
+          set -euo pipefail
+          gh api "/repos/$GITHUB_REPOSITORY/releases?per_page=100" > releases.json
+          release_id=$(jq -r '.[] | select(.tag_name == "s01-unverified-qa-backup-20261024" and .draft == true) | .id' releases.json)
+          test -n "$release_id"
+          gh api "/repos/$GITHUB_REPOSITORY/releases/$release_id/assets?per_page=100" > assets.json
+          filename="s01-unverified-part${PART}-zip-chunk-02"
+          id=$(jq -r --arg name "$filename" '.[] | select(.name == $name) | .id' assets.json)
+          digest=$(jq -r --arg name "$filename" '.[] | select(.name == $name) | .digest' assets.json)
+          test -n "$id"
+          gh api -H 'Accept: application/octet-stream' "/repos/$GITHUB_REPOSITORY/releases/assets/$id" > tail.chunk
+          echo "${digest#sha256:}  tail.chunk" | sha256sum -c -
+          python3 - <<'PY'
+          import os, struct, re, json
+          size = os.stat('tail.chunk').st_size
+          with open('tail.chunk','rb') as f:
+              n=min(size,4_000_000)
+              f.seek(size-n)
+              tail=f.read()
+          eocd=tail.rfind(b'PK\x05\x06')
+          assert eocd>=0,'ZIP EOCD not found in last chunk'
+          sig,disk,cd_disk,disk_entries,total,cd_size,cd_offset,comment=struct.unpack_from('<IHHHHIIH',tail,eocd)
+          assert disk==0 and cd_disk==0 and total<65535 and cd_offset<0xffffffff
+          global_tail_start=2*1572864000 + size-n
+          p=cd_offset-global_tail_start
+          assert 0<=p<len(tail), (p,len(tail),cd_offset)
+          names=[]
+          for i in range(total):
+              assert struct.unpack_from('<I',tail,p)[0]==0x02014b50, (i,p)
+              name_len,extra_len,comment_len=struct.unpack_from('<HHH',tail,p+28)
+              name=tail[p+46:p+46+name_len].decode('utf-8')
+              names.append(name)
+              p+=46+name_len+extra_len+comment_len
+          mp4=[x for x in names if x.lower().endswith('.mp4')]
+          part=f'{int(os.environ["PART"]):02d}'
+          wrong=[x for x in mp4 if not re.fullmatch(r'Kinogryz_S01_'+part+r'_\d{4}\.mp4',x)]
+          print(json.dumps({'part':part,'all_entries':len(names),'mp4_count':len(mp4),
+             'first_mp4':sorted(mp4)[:4], 'last_mp4':sorted(mp4)[-4:],
+             'unexpected_mp4_names':wrong[:40], 'unexpected_count':len(wrong)},ensure_ascii=False))
+          PY
