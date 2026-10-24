@@ -65,7 +65,7 @@ jobs:
               mp4 = [n for n in names if n.lower().endswith('.mp4')]
               assert 100 <= len(mp4) <= 140, f'Unexpected MP4 count: {len(mp4)}'
               assert len(mp4) == len(set(mp4)), 'Duplicate MP4 paths'
-              assert all(re.fullmatch(r'Kinogryz_S01_' + part + r'_\d{4}\.mp4', n) for n in mp4), 'Wrong part or naming'
+              assert all(re.fullmatch(r'Kinogryz_S01_' + f'{int(part):02d}' + r'_\d{4}\.mp4', n) for n in mp4), 'Wrong part or naming'
               assert not any(n.startswith('/') or '..' in n.split('/') for n in names), 'Unsafe archive path'
               assert all(z.getinfo(n).file_size > 0 for n in mp4), 'Empty MP4'
               print(json.dumps({'part': part, 'archive_entries': len(names),
