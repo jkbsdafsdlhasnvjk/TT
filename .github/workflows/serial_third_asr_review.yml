@@ -1,4 +1,4 @@
-name: Kinogryz S01 third-ASR diagnostic review (no MP4 changes)
+name: Kinogryz S01 multilingual third-ASR review (no MP4 changes)
 on:
   push:
     paths: [".github/workflows/serial_third_asr_review.yml"]
@@ -28,7 +28,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface/hub
-          key: kinogryz-third-asr-distil-large-v3-20261024
+          key: kinogryz-third-asr-multilingual-large-v3-20261024
       - name: Install third-ASR dependencies
         run: |
           python -m pip install -q faster-whisper==1.2.1
@@ -37,13 +37,13 @@ jobs:
           sudo apt-get install -y -qq ffmpeg
           command -v ffmpeg
           ffmpeg -version | head -n 1
-      - name: Crosscheck uncertain words with third ASR (never auto-correct)
+      - name: Crosscheck uncertain words with multilingual third ASR (never auto-correct)
         run: |
           python scripts/serial_third_asr_review.py \
             --input triage \
             --output third_asr_part_${{ matrix.part }} \
             --part ${{ matrix.part }} \
-            --model distil-large-v3
+            --model large-v3
       - name: Save unverified three-way diagnostic report
         if: always()
         uses: actions/upload-artifact@v4
