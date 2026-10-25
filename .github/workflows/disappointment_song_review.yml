@@ -1,0 +1,54 @@
+name: Kinogryz Disappointment song word-by-word triple ASR
+on:
+  push:
+    paths: [".github/workflows/disappointment_song_review.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+      - name: FFmpeg and multiple Russian models
+        run: |
+          bash scripts/check_ffmpeg.sh
+          python -m pip install -q faster-whisper==1.2.1 numpy gdown
+      - name: Get video source
+        run: gdown "https://drive.google.com/uc?id=1Ao1Xo_GgSX_l21ge-1PNdHrW0ycwZNn2" -O disappointment.mp4
+      - name: Independent transcription of singing and every word
+        run: |
+          python - <<'PY'
+          import json,subprocess,numpy as np
+          from pathlib import Path
+          from faster_whisper import WhisperModel
+          raw=subprocess.check_output(["ffmpeg","-v","error","-i","disappointment.mp4","-vn","-ac","1","-ar","16000","-f","s16le","-"])
+          signal=np.frombuffer(raw,dtype="<i2").astype(np.float32)/32768.
+          out={}
+          for modelname in ("large-v3-turbo","medium"):
+              for vad in ((False,True) if modelname=="large-v3-turbo" else (False,)):
+                  key=modelname+("_vad" if vad else "_no_vad")
+                  model=WhisperModel(modelname,device="cpu",compute_type="int8",cpu_threads=4)
+                  result,_=model.transcribe(signal,language="ru",word_timestamps=True,beam_size=5,
+                      temperature=0.0,condition_on_previous_text=False,vad_filter=vad,
+                      initial_prompt="Жители сказочного королевства, эльфы, пони, шутки и песни на русском языке.")
+                  parts=[]
+                  for seg in result:
+                      w=[{"start":round(x.start,3),"end":round(x.end,3),"word":x.word.strip(),"prob":round(x.probability or 0,3)}
+                         for x in seg.words or [] if x.start is not None and x.end is not None and x.end>x.start]
+                      parts.append({"start":round(seg.start,3),"end":round(seg.end,3),"text":seg.text.strip(),"words":w})
+                      print("SEG",key,seg.start,seg.end,seg.text,flush=True)
+                      for x in w: print("WORD",key,x["start"],x["end"],x["prob"],x["word"],flush=True)
+                  out[key]=parts
+                  print("MODEL_END",key,"words",sum(len(x["words"]) for x in parts),flush=True)
+          Path("disappointment_song_review.json").write_text(json.dumps(out,ensure_ascii=False,indent=2))
+          PY
+      - name: Save alternative line and word alignments
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: disappointment-song-multimodel-alignment
+          path: disappointment_song_review.json
+          if-no-files-found: warn
+          retention-days: 20
