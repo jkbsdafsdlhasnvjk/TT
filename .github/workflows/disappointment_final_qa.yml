@@ -1,0 +1,38 @@
+name: Kinogryz Disappointment final visual and subtitle QA
+on:
+  push:
+    paths: [".github/workflows/disappointment_final_qa.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download released MP4 and prepare ffmpeg
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download kinogryz-razocharovanie-45s-final -p 'Kinogryz_Razocharovanie_45s_Vertical_Subtitles.mp4'
+          bash scripts/check_ffmpeg.sh
+          python -m pip install -q pillow
+      - name: Probe finished video and inspect actual burned word captions
+        run: |
+          python - <<'PY'
+          import subprocess,json,base64,io
+          from PIL import Image,ImageDraw
+          file="Kinogryz_Razocharovanie_45s_Vertical_Subtitles.mp4"
+          meta=json.loads(subprocess.check_output(["ffprobe","-v","error","-show_entries","format=duration,size:stream=codec_name,codec_type,width,height","-of","json",file],text=True))
+          print("RELEASED_METADATA",json.dumps(meta),flush=True)
+          canvas=Image.new("RGB",(3*420,870),(10,10,20));draw=ImageDraw.Draw(canvas)
+          for i,t in enumerate([2.0,8.4,17.2]):
+              b=subprocess.check_output(["ffmpeg","-v","error","-ss",str(t),"-i",file,"-frames:v","1","-vf","scale=405:-2","-f","image2pipe","-vcodec","mjpeg","-"])
+              im=Image.open(io.BytesIO(b)).convert("RGB")
+              canvas.paste(im,(i*420,0));draw.text((i*420+5,760),f"t={t}s",fill="white")
+          buf=io.BytesIO();canvas.save(buf,"JPEG",quality=70,optimize=True)
+          print("FINAL_CONTACT_START",flush=True)
+          print(base64.b64encode(buf.getvalue()).decode(),flush=True)
+          print("FINAL_CONTACT_END",flush=True)
+          PY
