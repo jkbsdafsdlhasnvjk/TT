@@ -1,0 +1,67 @@
+name: Kinogryz Disappointment source word QA
+on:
+  push:
+    paths: [".github/workflows/disappointment_inspect.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare FFmpeg and whisper
+        run: |
+          bash scripts/check_ffmpeg.sh
+          python -m pip install -q faster-whisper==1.2.1 numpy gdown pillow
+      - name: Download exact user's source from Google Drive
+        run: gdown "https://drive.google.com/uc?id=1Ao1Xo_GgSX_l21ge-1PNdHrW0ycwZNn2" -O disappointment.mp4
+      - name: Inspect full sound and word timestamps with two Russian models
+        run: |
+          python scripts/transcribe_single_scene.py disappointment.mp4 disappointment_asr
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          root=Path("disappointment_asr")
+          meta=json.loads((root/"source_metadata.json").read_text())
+          print("FINAL_SOURCE_METADATA",json.dumps(meta,ensure_ascii=False),flush=True)
+          for m in ("medium","small"):
+              ss=json.loads((root/(m+"_segments.json")).read_text())
+              for s in ss:
+                  print("SENTENCE",m,s["start"],s["end"],s["text"],flush=True)
+                  for w in s["words"]:
+                      print("WORD",m,w["start"],w["end"],w["prob"],w["word"],flush=True)
+          PY
+      - name: Visual contact sheet
+        run: |
+          python - <<'PY'
+          from PIL import Image,ImageDraw
+          import io,base64,json,subprocess
+          meta=json.loads(subprocess.check_output(["ffprobe","-v","error","-show_entries","format=duration","-of","json","disappointment.mp4"],text=True))
+          dur=float(meta["format"]["duration"])
+          print("DURATION",dur,flush=True)
+          frames=[]
+          for p in [.03,.2,.4,.6,.8,.97]:
+              t=dur*p
+              raw=subprocess.check_output(["ffmpeg","-v","error","-ss",str(t),"-i","disappointment.mp4","-frames:v","1","-vf","scale=360:-2","-f","image2pipe","-vcodec","mjpeg","-"])
+              im=Image.open(io.BytesIO(raw)).convert("RGB")
+              im.thumbnail((360,300))
+              frames.append((t,im))
+          sh=Image.new("RGB",(1140,670),(16,16,22));d=ImageDraw.Draw(sh)
+          for i,(t,im) in enumerate(frames):
+              x=380*(i%3)+10;y=330*(i//3)+12
+              sh.paste(im,(x,y));d.text((x,y+300),f"{t:.1f}s",fill="white")
+          buf=io.BytesIO();sh.save(buf,"JPEG",quality=75,optimize=True)
+          print("CONTACT_SHEET_B64_START",flush=True)
+          print(base64.b64encode(buf.getvalue()).decode(),flush=True)
+          print("CONTACT_SHEET_B64_END",flush=True)
+          PY
+      - name: Save auditable word timings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: disappointment-raw-transcriptions
+          path: disappointment_asr/
+          retention-days: 20
+          if-no-files-found: warn
