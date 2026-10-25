@@ -1,0 +1,56 @@
+name: Kinogryz Disappointment 45s final vertical caption render
+on:
+  push:
+    paths: [".github/workflows/disappointment_render.yml"]
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify subtitle rendering code
+        run: python -m py_compile scripts/render_disappointment.py scripts/render_uploaded_scene.py
+      - name: Install FFmpeg and gdown
+        run: |
+          bash scripts/check_ffmpeg.sh
+          python -m pip install -q gdown
+      - name: Retrieve independently reviewed word timings
+        uses: actions/download-artifact@v4
+        with:
+          name: disappointment-song-multimodel-alignment
+          run-id: 40169450953
+          github-token: ${{ github.token }}
+      - name: Download user's exact source video
+        run: gdown "https://drive.google.com/uc?id=1Ao1Xo_GgSX_l21ge-1PNdHrW0ycwZNn2" -O disappointment.mp4
+      - name: Encode vertical 1080p scene and burn every subtitle word in
+        run: python scripts/render_disappointment.py
+      - name: Store finished MP4 (one media file) for Drive transfer
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kinogryz-disappointment-45s-final-mp4
+          path: disappointment_ready/Kinogryz_Razocharovanie_45s_Vertical_Subtitles.mp4
+          retention-days: 30
+          if-no-files-found: warn
+          compression-level: 0
+      - name: Store subtitle alignment and metadata proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kinogryz-disappointment-45s-review-data
+          path: |
+            disappointment_ready/*.json
+            disappointment_ready/*.ass
+            disappointment_ready/*.txt
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Publish direct MP4 file for download
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create kinogryz-razocharovanie-45s-final disappointment_ready/Kinogryz_Razocharovanie_45s_Vertical_Subtitles.mp4 --title "КиноГрызь — Разочарование, 45 сек, русские субтитры" --notes "Без зеркалирования, полный кадр, размытый вертикальный фон 1080×1920, 44.94 секунды, вшитые пословные русские субтитры с жёлтой подсветкой, оригинальный AAC звук без повторного кодирования, без водяных знаков."
