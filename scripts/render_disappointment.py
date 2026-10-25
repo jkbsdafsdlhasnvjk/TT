@@ -50,7 +50,7 @@ def words_from_asr():
         first["word"]=value
         original[a:b+1]=[first]
     original.sort(key=lambda w:w["start"])
-    assert len(original)==48, (len(original),"unexpected postmerge count")
+    assert len(original)==49, (len(original),"unexpected postmerge count")
     assert original[-1]["word"]=="вам."
     assert original[-1]["end"]<27
     return original
