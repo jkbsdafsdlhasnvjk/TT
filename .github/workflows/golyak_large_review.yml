@@ -1,0 +1,56 @@
+name: Kinogryz Golyak independent audio transcription
+on:
+  push:
+    paths: [".github/workflows/golyak_large_review.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+      - name: FFmpeg and strong whisper model
+        run: |
+          bash scripts/check_ffmpeg.sh
+          python -m pip install -q faster-whisper==1.2.1 numpy gdown
+      - name: Fetch original clip
+        run: gdown "https://drive.google.com/uc?id=140eY6m7vzI0TNuyCCMl9zX4ECQrSK_Bd" -O golyak_original.mp4
+      - name: Independent large-v3-turbo Russian dialogue
+        run: |
+          python - <<'PY'
+          import json,subprocess
+          from pathlib import Path
+          import numpy as np
+          from faster_whisper import WhisperModel
+          pcm=subprocess.check_output(["ffmpeg","-v","error","-i","golyak_original.mp4","-vn","-ac","1","-ar","16000","-f","s16le","-"])
+          audio=np.frombuffer(pcm,dtype="<i2").astype(np.float32)/32768.
+          model=WhisperModel("large-v3-turbo",device="cpu",compute_type="int8",cpu_threads=4)
+          results={}
+          for label,vad in [("large_no_vad",False),("large_vad",True)]:
+              segs,_=model.transcribe(audio,language="ru",word_timestamps=True,beam_size=5,temperature=0,
+                     condition_on_previous_text=False,vad_filter=vad,
+                     initial_prompt="Сериал Голяк, разговор мужчин по рации в лесу. Белка, огромная белка, Карди.",
+                     hallucination_silence_threshold=1)
+              rows=[]
+              for s in segs:
+                  row=dict(start=round(s.start,3),end=round(s.end,3),text=s.text.strip(),words=[])
+                  print("SEG",label,row["start"],row["end"],row["text"],flush=True)
+                  for w in s.words or []:
+                      if w.start is not None and w.end is not None and w.end>w.start:
+                          v=dict(start=round(w.start,3),end=round(w.end,3),word=w.word.strip(),prob=round(w.probability or 0,3))
+                          row["words"].append(v)
+                          print("WORD",label,v["start"],v["end"],v["prob"],v["word"],flush=True)
+                  rows.append(row)
+              results[label]=rows
+              print("MODEL_END",label,sum(len(x["words"]) for x in rows),flush=True)
+          Path("golyak_large.json").write_text(json.dumps(results,indent=2,ensure_ascii=False),encoding="utf8")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kinogryz-golyak-strong-word-review
+          path: golyak_large.json
+          if-no-files-found: warn
+          retention-days: 30
