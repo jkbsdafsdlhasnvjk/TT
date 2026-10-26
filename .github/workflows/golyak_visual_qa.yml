@@ -1,0 +1,41 @@
+name: Kinogryz Golyak final MP4 visual QA
+on:
+  push:
+    paths: [".github/workflows/golyak_visual_qa.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Retrieve final MP4 and FFmpeg
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download kinogryz-golyak-belka-37s -p 'Kinogryz_Golyak_Belka_37s_Vertical_RU_Captions.mp4'
+          bash scripts/check_ffmpeg.sh
+          python -m pip install -q pillow
+      - name: Verify source frame and highlighted subtitles in real MP4
+        run: |
+          python - <<'PY'
+          import subprocess,io,base64,json
+          from PIL import Image,ImageDraw
+          video="Kinogryz_Golyak_Belka_37s_Vertical_RU_Captions.mp4"
+          meta=json.loads(subprocess.check_output(["ffprobe","-v","error","-show_entries","format=duration,size:stream=codec_name,codec_type,width,height","-of","json",video],text=True))
+          print("VERIFIED_VIDEO_METADATA",json.dumps(meta,ensure_ascii=False),flush=True)
+          board=Image.new("RGB",(3*420,2*790),(12,12,18))
+          draw=ImageDraw.Draw(board)
+          times=[1.0,4.2,9.4,14.2,24.0,35.7]
+          for i,t in enumerate(times):
+              raw=subprocess.check_output(["ffmpeg","-v","error","-ss",str(t),"-i",video,"-frames:v","1","-vf","scale=405:-2","-f","image2pipe","-vcodec","mjpeg","-"])
+              im=Image.open(io.BytesIO(raw)).convert("RGB")
+              x=(i%3)*420+6;y=(i//3)*790
+              board.paste(im,(x,y));draw.text((x+3,y+740),str(t),fill="white")
+          buf=io.BytesIO();board.save(buf,"JPEG",quality=72,optimize=True)
+          print("GOLYAK_FINAL_CONTACT_START",flush=True)
+          print(base64.b64encode(buf.getvalue()).decode(),flush=True)
+          print("GOLYAK_FINAL_CONTACT_END",flush=True)
+          PY
