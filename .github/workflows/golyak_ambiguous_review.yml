@@ -1,0 +1,34 @@
+name: Kinogryz Golyak unclear lines second audio audit
+on:
+  push:
+    paths: [".github/workflows/golyak_ambiguous_review.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install FFmpeg and stronger ASR
+        run: |
+          bash scripts/check_ffmpeg.sh
+          python -m pip install -q faster-whisper==1.2.1 numpy gdown
+      - name: Fetch original clip
+        run: gdown "https://drive.google.com/uc?id=140eY6m7vzI0TNuyCCMl9zX4ECQrSK_Bd" -O golyak_original.mp4
+      - name: Hear uncertain phrases via untargeted large-v3 transcription
+        run: |
+          python - <<'PY'
+          import json,subprocess,numpy as np
+          from faster_whisper import WhisperModel
+          pcm=subprocess.check_output(["ffmpeg","-v","error","-i","golyak_original.mp4","-vn","-ac","1","-ar","16000","-f","s16le","-"])
+          wav=np.frombuffer(pcm,dtype="<i2").astype("float32")/32768.
+          model=WhisperModel("large-v3",device="cpu",compute_type="int8",cpu_threads=4)
+          for a,b in [(8.25,16.7),(17.7,25.6),(26.0,37.233)]:
+              s,_=model.transcribe(wav[int(a*16000):int(b*16000)],language="ru",word_timestamps=True,beam_size=5,temperature=0,vad_filter=False,condition_on_previous_text=False)
+              for seg in s:
+                  print("ALT_SEG",a,b,round(a+seg.start,2),round(a+seg.end,2),seg.text,flush=True)
+                  for w in seg.words or []:
+                      print("ALT_WORD",round(a+w.start,2),round(a+w.end,2),repr(w.word),round(w.probability or 0,2),flush=True)
+          PY
