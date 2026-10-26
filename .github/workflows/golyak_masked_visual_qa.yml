@@ -1,0 +1,39 @@
+name: Verify Golyak 37s censored MP4 frames
+on:
+  push:
+    paths: [".github/workflows/golyak_masked_visual_qa.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Retrieve final revised video
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download kinogryz-golyak-belka-37s-censored-v2 -p 'Kinogryz_Golyak_Belka_37s_Vertical_RU_Captions.mp4'
+          bash scripts/check_ffmpeg.sh
+          python -m pip install -q pillow
+      - name: Verify six star replacements visibly burned into frames
+        run: |
+          python - <<'PY'
+          import subprocess,io,base64,json
+          from PIL import Image,ImageDraw
+          video="Kinogryz_Golyak_Belka_37s_Vertical_RU_Captions.mp4"
+          m=json.loads(subprocess.check_output(["ffprobe","-v","error","-show_entries","format=duration,size:stream=codec_name,codec_type,width,height","-of","json",video],text=True))
+          print("MASKED_VIDEO_META",json.dumps(m),flush=True)
+          sheet=Image.new("RGB",(3*420,2*790),(15,15,21));d=ImageDraw.Draw(sheet)
+          for i,t in enumerate([4.7,9.2,11.1,14.1,21.65,26.85]):
+              raw=subprocess.check_output(["ffmpeg","-v","error","-ss",str(t),"-i",video,"-frames:v","1","-vf","scale=405:-2","-f","image2pipe","-vcodec","mjpeg","-"])
+              im=Image.open(io.BytesIO(raw)).convert("RGB")
+              x=(i%3)*420+7;y=(i//3)*790
+              sheet.paste(im,(x,y));d.text((x+8,y+742),f"t={t}s",fill="white")
+          buff=io.BytesIO();sheet.save(buff,"JPEG",quality=70,optimize=True)
+          print("MASKED_FRAMES_B64_START",flush=True)
+          print(base64.b64encode(buff.getvalue()).decode(),flush=True)
+          print("MASKED_FRAMES_B64_END",flush=True)
+          PY
