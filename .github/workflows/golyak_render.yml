@@ -1,0 +1,50 @@
+name: Kinogryz Golyak squirrel 37s portrait captions final
+on:
+  push:
+    paths: [".github/workflows/golyak_render.yml"]
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile portrait karaoke subtitle renderer
+        run: python -m py_compile scripts/render_golyak.py scripts/render_uploaded_scene.py
+      - name: Set up FFmpeg and Google Drive downloader
+        run: |
+          bash scripts/check_ffmpeg.sh
+          python -m pip install -q gdown
+      - name: Download original user's 37 second video
+        run: gdown "https://drive.google.com/uc?id=140eY6m7vzI0TNuyCCMl9zX4ECQrSK_Bd" -O golyak_original.mp4
+      - name: Render vertical original orientation with 74 reviewed word subtitles
+        run: python scripts/render_golyak.py
+      - name: Archive completed MP4 for direct connector transfer to Google Drive
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kinogryz-golyak-belka-37s-vertical-ready
+          path: golyak_ready/Kinogryz_Golyak_Belka_37s_Vertical_RU_Captions.mp4
+          compression-level: 0
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Archive timing and technical checks
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kinogryz-golyak-belka-37s-review-and-qa
+          path: |
+            golyak_ready/*.json
+            golyak_ready/*.txt
+            golyak_ready/*.ass
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Publish ready MP4 for viewing without ZIP
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create kinogryz-golyak-belka-37s golyak_ready/Kinogryz_Golyak_Belka_37s_Vertical_RU_Captions.mp4 --title "КиноГрызь — Голяк, белка, 37 сек с субтитрами" --notes "Исходный кадр полностью, без зеркалирования, 1080×1920 на размытом фоне, 37.23 секунды, вшитые русские субтитры с подсветкой слов по таймингам произнесения, оригинальный звук без перекодирования, без водяного знака."
