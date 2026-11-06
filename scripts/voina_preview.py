@@ -26,7 +26,7 @@ for i,g in enumerate(groups):
 style=("Style: Brand,DejaVu Sans,46,&H65FFFFFF,&H65FFFFFF,&H00000000,&H90000000,"
        "0,0,0,0,100,100,1.5,0,1,0,0,5,50,50,0,1\n")
 header=ASS_HEADER.replace("[Events]",style+"[Events]")
-brand=r"Dialogue: 1,0:00:00.00,0:00:32.60,Brand,,0,0,0,,{\\an5\\pos(540,1665)}КиноГрызь"
+brand=r"Dialogue: 1,0:00:00.00,0:00:32.60,Brand,,0,0,0,,{\an5\pos(540,1665)}КиноГрызь"
 ass=out/"preview_subtitle_and_brand.ass"
 ass.write_text(header+"\n".join(events)+"\n"+brand+"\n",encoding="utf-8")
 vf=("[0:v]split=2[b][f];"
