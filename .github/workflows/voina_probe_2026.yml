@@ -18,3 +18,9 @@ jobs:
         with:
           name: voina-asr
           path: voina_asr
+
+      - run: python scripts/voina_preview.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: voina-screenshot-preview
+          path: voina_preview/Kinogryz_brand_preview_1080x1920.png
