@@ -1,0 +1,20 @@
+name: Voina preview source frames
+on:
+  push:
+    paths: [".github/workflows/voina_probe_2026.yml"]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          bash scripts/check_ffmpeg.sh
+          python -m pip install -q gdown pillow faster-whisper==1.2.1 numpy
+      - run: gdown "https://drive.google.com/uc?id=1hNYTabwMmMtRqyaw73p_1lO3jVMe13xE" -O voina.mp4
+      - run: python scripts/transcribe_single_scene.py voina.mp4 voina_asr
+      - uses: actions/upload-artifact@v4
+        with:
+          name: voina-asr
+          path: voina_asr
